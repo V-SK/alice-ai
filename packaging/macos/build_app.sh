@@ -28,8 +28,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND="${ROOT_DIR}/backend"
 VENV="${ROOT_DIR}/.venv"
-PY="${VENV}/bin/python"
-PYINSTALLER="${VENV}/bin/pyinstaller"
+# Prefer the in-repo venv python; else fall back to the python on PATH (CI
+# installs deps + PyInstaller into the runner's hosted Python, not a repo .venv).
+if [[ -x "${VENV}/bin/python" ]]; then PY="${VENV}/bin/python"; else PY="$(command -v python3 || command -v python)"; fi
+# Run PyInstaller via the module (`python -m PyInstaller`) so it works whether it
+# was installed into the venv or the hosted Python (no dependence on a venv-only
+# `pyinstaller` console script on PATH).
+PYINSTALLER="${PY} -m PyInstaller"
 
 APP_NAME="AliceAI"
 BUNDLE_ID="org.aliceprotocol.ai"
@@ -45,7 +50,8 @@ DMG="${DIST}/${APP_NAME}-macos-${ARCH}.dmg"
 ZIP="${DIST}/${APP_NAME}-macos-${ARCH}.zip"
 
 [[ "$(uname)" == "Darwin" ]] || { echo "error: build on macOS" >&2; exit 1; }
-[[ -x "${PY}" ]] || { echo "error: no venv python at ${PY}" >&2; exit 1; }
+[[ -n "${PY}" && -x "${PY}" ]] || { echo "error: no python found (need a repo .venv or python3 on PATH)" >&2; exit 1; }
+"${PY}" -c "import PyInstaller" 2>/dev/null || { echo "error: PyInstaller not installed for ${PY} (pip install pyinstaller)" >&2; exit 1; }
 
 echo "==> 1/5  icon"
 bash "${ROOT_DIR}/packaging/macos/build_icon.sh" >/dev/null
@@ -56,7 +62,8 @@ echo "==> 2/5  PyInstaller freeze (emits ${APP_NAME}.app via BUNDLE)"
 if [[ "${SKIP_FREEZE:-0}" == "1" && -d "${FROZEN_APP}" ]]; then
   echo "    SKIP_FREEZE=1 — reusing ${FROZEN_APP}"
 else
-  ( cd "${BACKEND}" && rm -rf build dist && "${PYINSTALLER}" --noconfirm --log-level=WARN alice-backend.spec )
+  # ${PYINSTALLER} is "<python> -m PyInstaller" (intentionally unquoted to split).
+  ( cd "${BACKEND}" && rm -rf build dist && ${PYINSTALLER} --noconfirm --log-level=WARN alice-backend.spec )
 fi
 EXE_IN_APP="${FROZEN_APP}/Contents/MacOS/${APP_NAME}"
 [[ -x "${EXE_IN_APP}" ]] || { echo "error: freeze produced no ${EXE_IN_APP}" >&2; exit 1; }
