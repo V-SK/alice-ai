@@ -41,8 +41,13 @@ def get_rag_manager():
     try:
         from src.rag_vector import VectorRAG
 
-        base_dir = Path(__file__).parent.parent
-        persist_dir = os.path.join(base_dir, "data", "rag")
+        # Root the chroma persist dir under the writable DATA_DIR (redirected to
+        # ~/.alice/ai-data in a frozen .app) instead of __file__-relative, so a
+        # READ-ONLY bundle (installed to /Applications) doesn't crash trying to
+        # mkdir inside Contents/. (RAG is Advanced/off-by-default + chromadb is
+        # not bundled in Simple mode — this just keeps startup from failing.)
+        from core.constants import DATA_DIR
+        persist_dir = os.path.join(DATA_DIR, "rag")
 
         rag_instance = VectorRAG(persist_directory=persist_dir)
         if not rag_instance.healthy:

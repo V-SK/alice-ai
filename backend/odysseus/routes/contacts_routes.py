@@ -22,7 +22,8 @@ from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+import os as _os  # frozen .app: honour the writable data dir, not the bundle
+DATA_DIR = Path(_os.environ.get("ALICE_AI_DATA_DIR") or (Path(__file__).resolve().parent.parent / "data"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 LOCAL_CONTACTS_FILE = DATA_DIR / "contacts.json"
 

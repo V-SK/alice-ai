@@ -2,21 +2,33 @@
 
 import hashlib
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-# Cache directories
-CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
+# Cache directories. In a FROZEN .app the module sits in a READ-ONLY bundle
+# (Contents/Resources), so root the cache under the writable runtime DATA_DIR
+# (ALICE_AI_DATA_DIR → ~/.alice/ai-data) when set; otherwise keep the original
+# next-to-source location for dev. The import-time mkdir is wrapped so a
+# read-only filesystem never crashes the whole app at import (search is an
+# Advanced/off-by-default feature; it self-heals when the dir is writable).
+_data_dir = os.getenv("ALICE_AI_DATA_DIR")
+CACHE_DIR = (Path(_data_dir) / "cache") if _data_dir else (
+    Path(__file__).resolve().parent.parent / "cache"
+)
 SEARCH_CACHE_DIR = CACHE_DIR / "search"
 CONTENT_CACHE_DIR = CACHE_DIR / "content"
 CACHE_MAX_ENTRIES = 1000
 
-# Create cache directories
-SEARCH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-CONTENT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Create cache directories (best-effort; read-only bundle → skip until used).
+try:
+    SEARCH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    CONTENT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    logger.warning("search cache dir not writable at import (%s); will retry on use", CACHE_DIR)
 
 # Track cache size for LRU eviction
 search_cache_index: Dict[str, datetime] = {}

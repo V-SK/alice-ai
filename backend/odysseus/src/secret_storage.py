@@ -28,7 +28,13 @@ from core.platform_compat import safe_chmod
 
 logger = logging.getLogger(__name__)
 
-_KEY_PATH = Path(__file__).resolve().parent.parent / "data" / ".app_key"
+# frozen .app: write the encryption key to the WRITABLE data dir, not the
+# read-only bundle (ALICE_AI_DATA_DIR → ~/.alice/ai-data); dev unchanged.
+_KEY_PATH = (
+    (Path(os.environ["ALICE_AI_DATA_DIR"]) / ".app_key")
+    if os.environ.get("ALICE_AI_DATA_DIR")
+    else Path(__file__).resolve().parent.parent / "data" / ".app_key"
+)
 _PREFIX = "enc:"
 _fernet: Fernet | None = None
 

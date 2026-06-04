@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse, Response
 
 logger = logging.getLogger(__name__)
 
-_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "emoji_cache"
+import os as _os  # frozen .app: honour the writable data dir, not the bundle
+_CACHE_DIR = Path(_os.environ.get("ALICE_AI_DATA_DIR") or (Path(__file__).resolve().parent.parent / "data")) / "emoji_cache"
 # OpenMoji "black" set = monochrome line-art SVGs. Filenames are the codepoints
 # in UPPERCASE (FE0F dropped, same as we compute), '-' joined.
 _OPENMOJI_BASE = "https://cdn.jsdelivr.net/npm/openmoji@15.0.0/black/svg"

@@ -7,7 +7,12 @@ APP_VERSION = "1.0.0"
 # Base paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# DATA_DIR = the mutable runtime dir. In a FROZEN .app BASE_DIR is the read-only
+# bundle, so honour ALICE_AI_DATA_DIR (set by the frozen entry → ~/.alice/ai-data)
+# as the writable data root. (Mirrors core/constants.py — both modules are
+# imported across the tree; keep them in sync.) M2 packaging.
+DATA_DIR = os.getenv("ALICE_AI_DATA_DIR") or os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Data file paths
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")

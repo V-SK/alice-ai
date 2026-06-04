@@ -35,8 +35,11 @@ DEFAULT_PRIVILEGES = {
 # Admins get everything
 ADMIN_PRIVILEGES = {k: (True if isinstance(v, bool) else (0 if isinstance(v, int) else [])) for k, v in DEFAULT_PRIVILEGES.items()}
 
+# frozen .app: store auth.json in the WRITABLE data dir (ALICE_AI_DATA_DIR →
+# ~/.alice/ai-data), not the read-only bundle; dev unchanged.
 DEFAULT_AUTH_PATH = os.path.join(
-    Path(__file__).parent.parent, "data", "auth.json"
+    os.environ.get("ALICE_AI_DATA_DIR") or os.path.join(Path(__file__).parent.parent, "data"),
+    "auth.json",
 )
 TOKEN_TTL = 60 * 60 * 24 * 7  # 7 days
 

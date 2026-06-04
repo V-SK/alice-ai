@@ -7,7 +7,14 @@ APP_VERSION = "0.9.1"
 # Base paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# DATA_DIR is the mutable runtime dir (sqlite, settings.json, uploads, the
+# encryption key, …). In dev it sits next to the source (BASE_DIR/data). In a
+# FROZEN macOS .app the bundle under Contents/Resources is read-only when the
+# app is installed to /Applications, so the frozen entry redirects writes to a
+# user-owned dir via ALICE_AI_DATA_DIR (e.g. ~/.alice/ai-data). Honoured here so
+# every DATA_DIR-derived path below follows automatically. (M2 packaging.)
+DATA_DIR = os.getenv("ALICE_AI_DATA_DIR") or os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Data file paths
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")

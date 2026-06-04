@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     port = claim_ephemeral_port()
-    log_path = paths.repo_root() / ".venv" / "alice-backend.log"
+    log_path = paths.backend_log_path()
     backend = BackendProcess(port, log_path=log_path)
 
     _log(f"claimed loopback port {port}")

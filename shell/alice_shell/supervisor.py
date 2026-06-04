@@ -63,9 +63,18 @@ class BackendProcess:
         # Model Manager (M4) + earn glue (M7) resolve. alice_acp is a pip
         # editable install, so it does not need a path entry.
         backend_root = str(paths.backend_dir().parent)
+        path_parts = [backend_root]
+        # Frozen build (M2): the backend is THIS executable re-exec'd, so it has
+        # no venv site-packages. Add the bundled vendored alice_acp source root
+        # (<bundle>/_alice_src) so ``import alice_acp`` resolves with no Python
+        # install. ALICE_BUNDLE_ROOT is set by the frozen entry's shell role.
+        bundle_root = os.getenv("ALICE_BUNDLE_ROOT")
+        if bundle_root:
+            path_parts.append(os.path.join(bundle_root, "_alice_src"))
         existing = env.get("PYTHONPATH", "")
-        parts = [backend_root] + ([existing] if existing else [])
-        env["PYTHONPATH"] = os.pathsep.join(parts)
+        if existing:
+            path_parts.append(existing)
+        env["PYTHONPATH"] = os.pathsep.join(path_parts)
         # Quiet odysseus's background pollers that are useless for a local chat
         # spine (they only add log noise + cold-start pings).
         env.setdefault("ODYSSEUS_INPROCESS_TASKS", "0")
@@ -74,19 +83,28 @@ class BackendProcess:
         return env
 
     def start(self) -> None:
-        py = str(paths.venv_python())
         bdir = paths.backend_dir()
         if not (bdir / "app.py").exists():
             raise FileNotFoundError(f"backend app.py not found under {bdir}")
         # Ensure the backend's relative data dir (sqlite at ./data/app.db) exists.
         (bdir / "data").mkdir(parents=True, exist_ok=True)
 
-        cmd = [
-            py, "-m", "uvicorn", "app:app",
-            "--host", "127.0.0.1",
-            "--port", str(self.port),
-            "--no-access-log",
-        ]
+        if getattr(sys, "frozen", False):
+            # Frozen build (M2): re-exec THIS bundled executable in its backend
+            # role (alice_entry --alice-backend → uvicorn.run(app)). Reuses the
+            # exact frozen interpreter + module graph for the child; no venv, no
+            # system Python. The port is passed via ALICE_BACKEND_PORT (env).
+            cmd = [sys.executable, "--alice-backend"]
+        else:
+            # Dev: spawn the venv interpreter running uvicorn against the source
+            # backend (scripts/dev_run.sh path).
+            py = str(paths.venv_python())
+            cmd = [
+                py, "-m", "uvicorn", "app:app",
+                "--host", "127.0.0.1",
+                "--port", str(self.port),
+                "--no-access-log",
+            ]
         if self._log_path is not None:
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_fh = open(self._log_path, "w", encoding="utf-8")

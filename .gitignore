@@ -17,12 +17,17 @@ ENV/
 # --- Build / packaging artifacts ---
 /dist/
 /build/
+# PyInstaller per-spec output (backend/alice-backend.spec → backend/dist|build)
+backend/dist/
+backend/build/
 *.spec.bak
 # PyInstaller scratch
 *.manifest
 *.toc
 *.pkg
 __pyinstaller__/
+# Generated app icon (rebuild via packaging/macos/build_icon.sh)
+assets/icons/*.icns
 
 # --- Native packaging outputs ---
 *.dmg

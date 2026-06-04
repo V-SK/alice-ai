@@ -50,3 +50,22 @@ def models_dir() -> Path:
     if env:
         return Path(env)
     return Path.home() / ".alice" / "models"
+
+
+def backend_log_path() -> Path:
+    """Where the shell writes the backend's stdout/stderr log.
+
+    In dev this sits in the repo venv (``.venv/alice-backend.log``). In a FROZEN
+    .app, ``repo_root()`` resolves INSIDE the bundle (Contents/Resources), which
+    is read-only when the app is installed to /Applications — so redirect the
+    log to a user-owned dir (``~/.alice/logs``). Honours ``$ALICE_AI_LOG_DIR``.
+    """
+    env = os.getenv("ALICE_AI_LOG_DIR")
+    if env:
+        d = Path(env)
+    elif getattr(sys, "frozen", False):
+        d = Path.home() / ".alice" / "logs"
+    else:
+        d = repo_root() / ".venv"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "alice-backend.log"

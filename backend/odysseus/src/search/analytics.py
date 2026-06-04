@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Dict, Any
@@ -10,17 +11,28 @@ from .cache import cache_metrics
 
 logger = logging.getLogger(__name__)
 
-# Dedicated error logger with file handler
-_error_log_path = Path(__file__).resolve().parent.parent / "search_engine_error.log"
-_error_handler = logging.FileHandler(_error_log_path, encoding="utf-8")
-_error_handler.setLevel(logging.WARNING)
-_error_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+# In a FROZEN .app this module lives in a READ-ONLY bundle, so root the search
+# error log + analytics file under the writable runtime DATA_DIR
+# (ALICE_AI_DATA_DIR → ~/.alice/ai-data) when set; else keep them next to source
+# for dev. (Search is Advanced/off-by-default; this just keeps import from
+# crashing the whole app on a read-only filesystem.)
+_data_dir = os.getenv("ALICE_AI_DATA_DIR")
+_base = Path(_data_dir) if _data_dir else Path(__file__).resolve().parent.parent
+
+# Dedicated error logger with file handler (best-effort: read-only → NullHandler)
+_error_log_path = _base / "search_engine_error.log"
 error_logger = logging.getLogger("search_engine_error")
-error_logger.addHandler(_error_handler)
+try:
+    _error_handler = logging.FileHandler(_error_log_path, encoding="utf-8")
+    _error_handler.setLevel(logging.WARNING)
+    _error_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    error_logger.addHandler(_error_handler)
+except OSError:
+    error_logger.addHandler(logging.NullHandler())
 error_logger.propagate = False
 
 # Analytics file
-ANALYTICS_FILE = Path(__file__).resolve().parent.parent / "search_analytics.json"
+ANALYTICS_FILE = _base / "search_analytics.json"
 
 
 # ----------------------------------------------------------------------
@@ -46,7 +58,6 @@ class RateLimitError(SearchEngineError):
 # Analytics helpers
 # ----------------------------------------------------------------------
 def _default_analytics() -> Dict[str, Any]:
-    """A fresh analytics document with every counter present."""
     return {
         "total_queries": 0,
         "successful_queries": 0,

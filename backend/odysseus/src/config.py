@@ -137,9 +137,16 @@ class AppConfig(BaseSettings):
             base_dir = v["base_dir"]
         else:
             base_dir = Path(__file__).parent.parent
-        
-        # Convert string paths to Path objects relative to base_dir
-        data_dir = base_dir / "data"
+
+        # Convert string paths to Path objects relative to base_dir. In a FROZEN
+        # .app, base_dir is the READ-ONLY bundle, so honour ALICE_AI_DATA_DIR
+        # (set by the frozen entry → ~/.alice/ai-data) as the writable data root.
+        # This systemically relocates the whole mutable data tree (uploads,
+        # sessions, memory, personal_docs, the sqlite DB, …) off the read-only
+        # bundle, so create_directories() succeeds when installed to /Applications.
+        import os as _os
+        _data_override = _os.getenv("ALICE_AI_DATA_DIR")
+        data_dir = Path(_data_override) if _data_override else (base_dir / "data")
         
         # Get values from the input dict or use defaults
         max_upload_size = v.get("max_upload_size", 10 * 1024 * 1024) if isinstance(v, dict) else 10 * 1024 * 1024

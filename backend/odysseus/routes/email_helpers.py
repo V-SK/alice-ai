@@ -254,15 +254,21 @@ def _cleanup_compose_uploads(tokens) -> None:
             pass
 
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# frozen .app: DATA_DIR is the WRITABLE runtime dir (ALICE_AI_DATA_DIR →
+# ~/.alice/ai-data), not the read-only bundle; dev unchanged.
+DATA_DIR = Path(os.environ.get("ALICE_AI_DATA_DIR") or (Path(__file__).resolve().parent.parent / "data"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 # Override at deploy time via ODYSSEUS_MAIL_ATTACHMENTS_DIR. Defaults to a
 # subdir of the install's data/ tree so the app works out-of-the-box without
 # a hardcoded /home/<user>/ path.
 ATTACHMENTS_DIR = Path(os.environ.get("ODYSSEUS_MAIL_ATTACHMENTS_DIR", str(DATA_DIR / "mail-attachments")))
-ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
-COMPOSE_UPLOADS_DIR = ATTACHMENTS_DIR / "_compose"
-COMPOSE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# best-effort: read-only filesystem (frozen bundle w/o data override) → skip.
+try:
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    COMPOSE_UPLOADS_DIR = ATTACHMENTS_DIR / "_compose"
+    COMPOSE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    COMPOSE_UPLOADS_DIR = ATTACHMENTS_DIR / "_compose"
 SCHEDULED_DB = DATA_DIR / "scheduled_emails.db"
 
 
