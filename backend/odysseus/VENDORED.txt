@@ -1,0 +1,11 @@
+Vendored from: https://github.com/pewdiepie-archdaemon/odysseus
+Pinned commit: 4dc11cfe6b57105511bb414d080a9043b643c091
+Commit:        refactor(memory): canonicalize memory imports (#50)
+Commit date:   2026-06-04 05:31:15 +0100
+Vendored by:   scripts/vendor_odysseus.sh
+Stripped:      docker/, Dockerfile, .dockerignore, docker-compose*.yml, *.service,
+               install-service.sh  (PLAN §2.3 — never used)
+
+This tree is otherwise kept as-is; the trim/strip/skin of routes + frontend
+happens in later milestones. Upstream MIT LICENSE is retained here and in
+../../NOTICE.

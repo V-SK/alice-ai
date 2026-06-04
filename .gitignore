@@ -1,0 +1,50 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# --- Virtual environments (the M0 dev venv lives in-repo, gitignored) ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Build / packaging artifacts ---
+/dist/
+/build/
+*.spec.bak
+# PyInstaller scratch
+*.manifest
+*.toc
+*.pkg
+__pyinstaller__/
+
+# --- Native packaging outputs ---
+*.dmg
+*.app/
+*.exe
+*.AppImage
+*.deb
+
+# --- Downloaded models (multi-GB; never committed; fetched first-run to ~/.alice/models) ---
+/models/
+*.gguf
+*.safetensors
+*.npz
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- Logs / local env ---
+*.log
+.env
+.env.local

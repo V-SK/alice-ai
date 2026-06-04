@@ -1,0 +1,96 @@
+# Alice AI — backend dependencies.
+#
+# Dependency direction (PLAN §2.4): alice-ai/backend depends on alice-acp (our
+# Track-A inference engine) as a normal Python package — we CONSUME it, never
+# fork/copy. It is wired here as an editable PATH dependency to the sibling repo.
+#
+# M0 scope: only what the import smoke needs must actually install — the
+# `alice-acp` package (so `from alice_acp.local_inference import ...` resolves)
+# plus odysseus's web stack. The heavy inference wheels (llama-cpp-python, mlx,
+# onnx via fastembed) are DECLARED here but DEFERRED to M1/M4 — they are large,
+# platform-specific, and not needed to make the imports resolve. See the
+# "DEFERRED" block and the heavy-dependency note at the bottom.
+#
+# A hash-pinned `requirements.lock.txt` is produced in a later milestone (M2+);
+# this file pins loosely for the dev env.
+
+# =============================================================================
+# 1. Our inference engine — alice-acp (editable path dep). REQUIRED for M0.
+# =============================================================================
+# `local_inference` and its transitive alice_acp.* imports (api_chat,
+# api_chat_gateway, mining_device) are PURE-STDLIB at import time, so this brings
+# in only alice-acp's own light hard deps (alembic, cryptography, psycopg,
+# SQLAlchemy). The MLX/llama.cpp adapters in runtimes.py import their backends
+# LAZILY, so neither is required just to import the package.
+#
+# NOTE: this path is relative to THIS file's directory (backend/), so install
+# from inside backend/  (`cd backend && pip install -r requirements.txt`) — or
+# just use scripts/setup_dev_env.sh, which does that. pip resolves relative
+# requirement paths against its CWD, not the -r file's location.
+-e ../../alice-acp
+
+# =============================================================================
+# 2. odysseus web stack — the forked FastAPI app. REQUIRED for M0/M1.
+#    (subset of backend/odysseus/requirements.txt: just enough to import app.py)
+# =============================================================================
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+httpx
+pydantic>=2.0
+pydantic-settings>=2.0
+SQLAlchemy
+
+# =============================================================================
+# 3. odysseus core-path libs (RAG/research/calendar). Installed by default
+#    upstream; kept here so app import doesn't trip a hard import. Light-ish.
+#    (Trim happens at freeze time per PLAN §2.3 — Advanced-only deps dropped.)
+# =============================================================================
+pypdf
+beautifulsoup4
+charset-normalizer
+numpy
+markdown
+python-dateutil
+
+# =============================================================================
+# DEFERRED — declared, NOT installed for the M0 smoke (heavy / platform / opt).
+# Uncomment per-platform in M1 (inference) / M4 (model verify) / packaging.
+# =============================================================================
+# --- inference runtimes (the big ones; one per platform at freeze time) ---
+# llama-cpp-python      # CPU + CUDA GGUF backend (Win/Linux); large native wheel
+# mlx                   # Apple-Silicon backend (macOS arm64 only)
+# mlx-lm                # MLX model loading helpers (macOS arm64 only)
+#
+# --- native shell (lives in shell/, listed here for the one-toolchain venv) ---
+# pywebview             # the double-click WebView shell (M1)
+#
+# --- odysseus RAG embeddings (pulls onnxruntime; heavy; fail-soft to BM25) ---
+# chromadb-client       # lightweight HTTP client; PLAN §2.3 -> embedded chromadb
+# fastembed             # local ONNX embeddings; large
+#
+# --- odysseus optional / Advanced-gated (dropped from frozen build, §2.3) ---
+# icalendar             # calendar import/export
+# caldav                # CalDAV sync
+# youtube-transcript-api
+# mcp                   # Model Context Protocol (Advanced)
+# bcrypt                # auth (Simple mode runs AUTH_ENABLED=false)
+# pyotp
+# qrcode[pil]
+# croniter
+
+# =============================================================================
+# HEAVY-DEPENDENCY NOTE (for the later bundling milestones)
+# =============================================================================
+# `alice_acp.local_inference` itself needs NO heavy deps to import or to run the
+# StubRuntimeAdapter — it is pure stdlib, and MLX/llama.cpp are imported lazily
+# only when a real adapter is selected. So the bundle does NOT need alice-acp's
+# FULL dependency tree (alembic/psycopg/SQLAlchemy are pulled by other alice_acp
+# subpackages, not by the inference path). At freeze time we can collect just:
+#   alice_acp.local_inference  + its intra-package deps:
+#     alice_acp.api_chat.{contracts,model_catalog,types,validators}
+#     alice_acp.api_chat_gateway.{colocated_inference_worker,worker_bridge}
+#     alice_acp.mining_device.{detector,types}
+# plus exactly one inference backend wheel for the target platform
+# (mlx+mlx-lm on macOS arm64; llama-cpp-python CPU/CUDA on Win/Linux).

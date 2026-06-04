@@ -1,0 +1,82 @@
+Alice AI
+Copyright (c) 2026 Alice Protocol
+
+This product is the third Alice client (siblings: the egui Wallet + egui Miner).
+It is distributed under the MIT License (see LICENSE).
+
+It includes and builds upon third-party software, listed below with their
+licenses. The build vendors the odysseus fork under `backend/odysseus/`; brand
+assets and fonts are copied from sibling Alice repos and from their upstreams.
+
+================================================================================
+1. odysseus  (vendored under backend/odysseus/)
+================================================================================
+Upstream:        https://github.com/pewdiepie-archdaemon/odysseus
+License:         MIT
+Pinned commit:   4dc11cfe6b57105511bb414d080a9043b643c091
+Vendored by:     scripts/vendor_odysseus.sh
+
+The odysseus FastAPI + vanilla-ES6 AI workspace is the application skeleton
+(chat UI, streaming, sessions/history, agents/tools/RAG/MCP). It is vendored at
+the pinned commit above and trimmed (Docker/compose/service files removed; see
+scripts/vendor_odysseus.sh). The upstream MIT license text is reproduced
+verbatim below.
+
+--- odysseus LICENSE (verbatim) ---
+MIT License
+
+Copyright (c) 2025 Odysseus Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--- end odysseus LICENSE ---
+
+The odysseus source bundles its own third-party attributions under its
+`licenses/` and `ACKNOWLEDGMENTS.md`; those are retained in the vendored tree.
+
+================================================================================
+2. alice-acp  (consumed as a Python dependency — NOT vendored)
+================================================================================
+Source:          ../alice-acp  (sibling repo, internal)
+Used as:         editable/path dependency; backend/ imports
+                 `alice_acp.local_inference` (the Track-A inference engine).
+Note:            Consumed, never forked/copied — Track-A improvements flow in.
+
+================================================================================
+3. Brand assets + fonts  (assets/, populated in a later milestone)
+================================================================================
+- Alice brand mark + theme tokens: copied from the sibling alice-miner repo
+  (docs/design/mockup.html :root, theme.rs, assets/brand/alice-logo.svg).
+- Inter            — SIL Open Font License 1.1 — https://github.com/rsms/inter
+- JetBrains Mono   — SIL Open Font License 1.1 — https://github.com/JetBrains/JetBrainsMono
+- Noto Sans SC     — SIL Open Font License 1.1 — https://github.com/notofonts/noto-cjk
+
+(Fonts are bundled, not loaded from a CDN. Their OFL license files are placed
+alongside the TTFs under assets/fonts/ when populated.)
+
+================================================================================
+4. Bundled runtime libraries  (collected by PyInstaller in a later milestone)
+================================================================================
+- llama.cpp / llama-cpp-python — MIT — https://github.com/abetlen/llama-cpp-python
+- mlx / mlx-lm                 — MIT — https://github.com/ml-explore/mlx
+- FastAPI / Starlette / uvicorn / pydantic — MIT/BSD
+- PyWebView                    — BSD-3-Clause — https://github.com/r0x0r/pywebview
+
+These are declared in backend/requirements.txt (and pinned in
+backend/requirements.lock.txt in a later milestone). Their license texts are
+collected into the distributed bundle at package time.
