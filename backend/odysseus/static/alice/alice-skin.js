@@ -284,50 +284,162 @@
   }
 
   // --- model picker popover ---
-  var TIERS = [
-    { key: 'lite', tier: 'lite', dot: 'var(--tier-lite)', state: 'ready' },
-    { key: 'std',  tier: 'std',  dot: 'var(--tier-std)',  state: 'current' },
-    { key: 'pro',  tier: 'pro',  dot: 'var(--tier-pro)',  state: 'download', size: '29 GB' },
-    { key: 'rp',   tier: 'rp',   dot: 'var(--tier-rp)',   state: 'locked',   size: '19 GB' },
+  // M3 demo fallback (used only when the /alice Model Manager API is absent,
+  // e.g. the static mockup demo). Real data comes from window.AliceModels (M4).
+  var TIER_DOT = { lite: 'var(--tier-lite)', std: 'var(--tier-std)', pro: 'var(--tier-pro)', rp: 'var(--tier-rp)', rp_lite: 'var(--tier-rp)' };
+  var DEMO_TIERS = [
+    { id: 'lite', display_name: 'Alice Lite', state: 'ready',        active: true,  download_size_human: '2.4 GB', context: { min: 4096, max: 262144, chosen: 8192 } },
+    { id: 'std',  display_name: 'Alice',      state: 'downloadable', active: false, download_size_human: '5.0 GB', context: { min: 4096, max: 262144, chosen: 8192 } },
+    { id: 'pro',  display_name: 'Alice Pro',  state: 'downloadable', active: false, download_size_human: '29 GB',  context: { min: 4096, max: 131072, chosen: 8192 } },
   ];
-  var TIER_SIZE = { lite: '2.4 GB', std: '5.0 GB', pro: '29 GB', rp: '19 GB' };
-  function pickerItemHTML(t) {
-    var nm = T('model.' + t.key);
-    var ds = T('model.' + t.key + '.ds');
-    var size = t.size || TIER_SIZE[t.key];
-    var right;
-    if (t.state === 'ready') right = '<span class="got">' + ic(ICONS.check, 11) + T('model.ready') + '</span><br>' + size;
-    else if (t.state === 'current') right = '<span class="got">' + ic(ICONS.check, 11) + T('model.ready') + '</span><br>' + size;
-    else if (t.state === 'download') right = T('model.download') + '<br>' + size;
-    else right = size;
-    var cur = (t.state === 'current') ? ' <span class="cur">' + T('model.current') + '</span>' : '';
-    var cls = 'mp-item' + (t.state === 'current' ? ' on' : '') + (t.state === 'locked' ? ' locked' : '');
-    return '<div class="' + cls + '" data-tier="' + t.key + '">' +
-      '<span class="tdot" style="background:' + t.dot + '"></span>' +
-      '<span class="mi"><span class="nm">' + nm + cur + '</span><span class="ds">' + ds + '</span></span>' +
+
+  function _fmtCtx(n) {
+    if (n >= 1024 && n % 1024 === 0) return (n / 1024) + 'k';
+    return String(n);
+  }
+
+  // One picker row, driven by a real (or demo) card from the backend.
+  function pickerItemHTML(m) {
+    var ds = T('model.' + m.id + '.ds') || (m.tagline || '');
+    var dot = TIER_DOT[m.id] || 'var(--tier-std)';
+    var size = m.download_size_human || '';
+    var right, badge = '';
+    if (m.state === 'ready') {
+      right = '<span class="got">' + ic(ICONS.check, 11) + T('model.ready') + '</span><br>' + size;
+    } else if (m.state === 'downloading') {
+      right = T('download.live') + '…<br>' + size;
+    } else if (m.state === 'locked') {
+      right = '<span class="a-lock">' + ic(ICONS.lock, 11) + '</span> ' + size;
+    } else {
+      right = T('model.download') + '<br>' + size;
+    }
+    if (m.recommended) badge = ' <span class="badge">' + T('download.recommended') + '</span>';
+    var cur = m.active ? ' <span class="cur">' + T('model.current') + '</span>' : '';
+    var cls = 'mp-item' + (m.active ? ' on' : '') + (m.state === 'locked' ? ' locked' : '');
+    var reason = (m.gate && m.gate.level === 'refuse') ? ' title="' + (m.gate.reason || '') + '"' : '';
+    return '<div class="' + cls + '" data-id="' + m.id + '"' + reason + '>' +
+      '<span class="tdot" style="background:' + dot + '"></span>' +
+      '<span class="mi"><span class="nm">' + m.display_name + cur + badge + '</span><span class="ds">' + ds + '</span></span>' +
       '<span class="sz">' + right + '</span>' +
     '</div>';
   }
+
+  // The per-model context-size control (4k..max), rendered for the active model.
+  function contextControlHTML(m) {
+    if (!m || !m.context) return '';
+    var c = m.context;
+    var val = c.chosen || c.default || c.min;
+    return '<div class="mp-ctx" data-id="' + m.id + '">' +
+      '<div class="mp-ctx-row"><span class="mp-ctx-lbl">' + T('context.label') + '</span>' +
+        '<span class="mp-ctx-val">' + _fmtCtx(val) + '</span></div>' +
+      '<input type="range" class="mp-ctx-range" min="' + c.min + '" max="' + c.max + '" step="1024" value="' + val + '">' +
+      '<div class="mp-ctx-hint">' + T('context.hint') + '</div>' +
+    '</div>';
+  }
+
+  function _renderPickerBody(mp, data) {
+    var models = (data && data.models) || DEMO_TIERS;
+    var active = null;
+    models.forEach(function (m) { if (m.active) active = m; });
+    mp.innerHTML =
+      '<div class="mp-h">' + T('picker.h') + '</div>' +
+      models.map(pickerItemHTML).join('') +
+      contextControlHTML(active) +
+      '<div class="mp-foot">' + ic(ICONS.lock, 12) + T('picker.foot') + '</div>';
+    _wirePickerRows(mp, models);
+    _wireContextControl(mp);
+  }
+
+  function _wirePickerRows(mp, models) {
+    mp.querySelectorAll('.mp-item:not(.locked)').forEach(function (it) {
+      it.addEventListener('click', function () {
+        var id = it.getAttribute('data-id');
+        var m = null; models.forEach(function (x) { if (x.id === id) m = x; });
+        if (!m || m.active) { closePicker(); return; }
+        _selectModel(id, m);
+      });
+    });
+  }
+
+  function _wireContextControl(mp) {
+    var range = mp.querySelector('.mp-ctx-range');
+    if (!range || !window.AliceModels) return;
+    var valEl = mp.querySelector('.mp-ctx-val');
+    var id = mp.querySelector('.mp-ctx').getAttribute('data-id');
+    range.addEventListener('input', function () { if (valEl) valEl.textContent = _fmtCtx(parseInt(range.value, 10)); });
+    range.addEventListener('change', function () {
+      window.AliceModels.setContext(id, parseInt(range.value, 10)).then(function (res) {
+        if (res && res.context_length && valEl) valEl.textContent = _fmtCtx(res.context_length);
+        // a tight gate after a big context bump → surface the honest hint
+        if (res && res.gate && res.gate.level !== 'ok') {
+          var hint = mp.querySelector('.mp-ctx-hint');
+          if (hint) hint.textContent = T('context.warn');
+        }
+      });
+    });
+  }
+
+  // Switch (ready) or download-then-switch (downloadable). Honest WARN confirm.
+  function _selectModel(id, m) {
+    if (!window.AliceModels) { closePicker(); return; }
+    if (m.state === 'downloadable') {
+      // route the download through the first-run-style ring (reused overlay).
+      closePicker();
+      _downloadThenLoad(id);
+      return;
+    }
+    // ready → load/switch (with a WARN confirm if the gate needs it)
+    window.AliceModels.load(id, { confirm: false }).then(function (r) {
+      if (r.ok) { closePicker(); _refreshPickerLabel(); return; }
+      if (r.status === 409 && r.body) {
+        if (r.body.needs_confirm) {
+          // honest WARN: ask before loading a model that's tight for the device
+          if (window.confirm(T('gate.warn'))) {
+            window.AliceModels.load(id, { confirm: true }).then(function () { closePicker(); _refreshPickerLabel(); });
+          }
+          return;
+        }
+        if (r.body.blocked) {
+          // REFUSE: too big for the device — keep the picker open, explain.
+          window.alert(T('gate.refuse'));
+          return;
+        }
+      }
+    });
+  }
+
+  function _refreshPickerLabel() {
+    if (!window.AliceModels) return;
+    window.AliceModels.current().then(function (c) {
+      var lbl = document.getElementById('model-picker-label');
+      if (lbl && c && c.current) lbl.textContent = c.current.display_name;
+    });
+  }
+
   function openPicker(anchorEl) {
     closePicker();
     var bd = document.createElement('div'); bd.className = 'a-mp-backdrop'; bd.id = 'a-mp-backdrop';
     var mp = document.createElement('div'); mp.className = 'mp';
-    mp.innerHTML =
-      '<div class="mp-h">' + T('picker.h') + '</div>' +
-      TIERS.map(pickerItemHTML).join('') +
-      '<div class="mp-foot">' + ic(ICONS.lock, 12) + T('picker.foot') + '</div>';
+    mp.innerHTML = '<div class="mp-h">' + T('picker.h') + '</div><div class="mp-loading">…</div>';
     bd.appendChild(mp);
     document.body.appendChild(bd);
-    // position under the anchor
     var r = anchorEl ? anchorEl.getBoundingClientRect() : { left: 70, bottom: 96 };
-    var top = Math.min(r.bottom + 8, window.innerHeight - 320);
+    var top = Math.min(r.bottom + 8, window.innerHeight - 360);
     var left = Math.min(r.left, window.innerWidth - 352);
     mp.style.top = Math.max(8, top) + 'px';
     mp.style.left = Math.max(8, left) + 'px';
     bd.addEventListener('click', function (e) { if (e.target === bd) closePicker(); });
-    mp.querySelectorAll('.mp-item:not(.locked)').forEach(function (it) {
-      it.addEventListener('click', function () { closePicker(); /* M4 wires the switch */ });
-    });
+
+    // Real data from the M4 Model Manager; fall back to the demo when absent.
+    if (window.AliceModels) {
+      window.AliceModels.available().then(function (up) {
+        if (!up) { _renderPickerBody(mp, { models: DEMO_TIERS }); return; }
+        window.AliceModels.list({ rp: advOn() }).then(function (data) { _renderPickerBody(mp, data); })
+          .catch(function () { _renderPickerBody(mp, { models: DEMO_TIERS }); });
+      });
+    } else {
+      _renderPickerBody(mp, { models: DEMO_TIERS });
+    }
   }
   function closePicker() { var b = document.getElementById('a-mp-backdrop'); if (b) b.remove(); }
 
@@ -421,17 +533,100 @@
     ov.querySelectorAll('[data-fr]').forEach(function (b) {
       b.addEventListener('click', function () {
         var act = b.getAttribute('data-fr');
-        if (act === 'start') { FR_STATE.step = 1; startDemoProgress(); renderFirstRun(); }
+        if (act === 'start') { FR_STATE.step = 1; renderFirstRun(); startDownload(); }
         else if (act === 'chat') { closeFirstRun(); }
       });
     });
     ov.querySelector('.a-ov-lang') && ov.querySelector('.a-ov-lang').addEventListener('click', function () {
       if (!window.AliceI18n) return; window.AliceI18n.setLang(window.AliceI18n.other()); renderFirstRun(); applyI18n();
     });
+    // On the welcome step, fill the detected-device + recommended model from
+    // the real Model Manager (when the /alice API is up).
+    if (FR_STATE.step === 0 || FR_STATE.step === 1) _hydrateFirstRunDevice();
   }
+
+  // Pull the real device label + recommended tier into the first-run card.
+  function _hydrateFirstRunDevice() {
+    if (!window.AliceModels) return;
+    window.AliceModels.available().then(function (up) {
+      if (!up) return;  // keep the demo placeholder text in the static mockup
+      window.AliceModels.recommend().then(function (data) {
+        var dev = data.device || {};
+        var rec = data.recommended || {};
+        FR_STATE.recId = rec.id || 'lite';
+        FR_STATE.recSize = rec.download_size_human || '';
+        var v = document.querySelector('#a-firstrun .fr-detect .v');
+        if (v && dev.label) {
+          v.innerHTML = dev.label + ' <small>· ' + (dev.memory_gb || '?') + ' GB · ' + (dev.accelerator || '') + '</small>';
+        }
+        var ml = document.querySelector('#a-firstrun .fr-modline .ml');
+        if (ml) ml.innerHTML = '<span class="tdot"></span>' + (rec.display_name || T('model.lite')) +
+          ' <span class="badge">' + T('download.recommended') + '</span>';
+        var mr = document.querySelector('#a-firstrun .fr-modline .mr');
+        if (mr && FR_STATE.recSize) mr.textContent = '0.0 / ' + FR_STATE.recSize;
+      }).catch(function () {});
+    });
+  }
+
+  // Start the REAL download (verified, resumable) of the recommended tier; fall
+  // back to the demo ring only when the /alice Model Manager API is absent.
+  function startDownload() {
+    if (!window.AliceModels) { startDemoProgress(); return; }
+    window.AliceModels.available().then(function (up) {
+      if (!up) { startDemoProgress(); return; }
+      var id = FR_STATE.recId || 'lite';
+      window.AliceModels.ensure(id, _onDownloadEvent).then(function (ev) {
+        if (ev && ev.phase === 'error') { _showDownloadError(ev); return; }
+        // verified → load it, then go to Ready.
+        window.AliceModels.load(id, { confirm: true }).then(function () {
+          FR_STATE.step = 2; renderFirstRun(); _refreshPickerLabel();
+        });
+      }).catch(function () { startDemoProgress(); });
+    });
+  }
+
+  function _onDownloadEvent(ev) {
+    // ev: {phase, fraction, downloaded_bytes, total_bytes, rate_bps, ...}
+    var pct = Math.round((ev.fraction || 0) * 100);
+    var ring = document.querySelector('#a-firstrun .dl-ring');
+    var pe = document.querySelector('#a-firstrun .dl-pct');
+    var bar = document.querySelector('#a-firstrun .fr-bar i');
+    var mr = document.querySelector('#a-firstrun .fr-modline .mr');
+    var meta = document.querySelector('#a-firstrun .fr-meta .live .mono');
+    if (ring) ring.style.setProperty('--p', (pct / 100).toFixed(2));
+    if (pe) pe.innerHTML = pct + '<small>%</small>';
+    if (bar) bar.style.width = pct + '%';
+    if (mr && ev.total_bytes) {
+      var gb = (ev.downloaded_bytes / 1e9).toFixed(1), tot = (ev.total_bytes / 1e9).toFixed(1);
+      mr.textContent = gb + ' / ' + tot + ' GB';
+    }
+    if (meta && ev.rate_bps) meta.textContent = (ev.rate_bps / 1e6).toFixed(1) + ' MB/s';
+    // verifying / publishing phases: keep the ring full, swap the sub-line
+    if (ev.phase === 'verifying') {
+      var sub = document.querySelector('#a-firstrun .fr-h');
+      if (sub) sub.textContent = T('download.verifying');
+    }
+  }
+
+  function _showDownloadError(ev) {
+    var h = document.querySelector('#a-firstrun .fr-h');
+    var sub = document.querySelector('#a-firstrun .fr-sub');
+    if (h) h.textContent = T('download.paused');
+    if (sub) sub.textContent = (ev && ev.message) ? ev.message : T('err.generic');
+  }
+
+  // Picker → download a not-yet-installed tier (reuses the first-run ring), then
+  // load it as the active model.
+  function _downloadThenLoad(id) {
+    FR_STATE.recId = id;
+    openFirstRun();
+    FR_STATE.step = 1; renderFirstRun();
+    startDownload();
+  }
+
   function startDemoProgress() {
-    // The actual download wiring is M1/M4. Here we demo-advance the ring so the
-    // SCREEN reads as live (mockup parity). Stops at 100 → Ready step.
+    // Demo ring (mockup parity) — used ONLY when the /alice API is absent
+    // (the standalone static mockup). Real downloads use startDownload().
     if (FR_STATE.demoTimer) return;
     FR_STATE.pct = 8;
     FR_STATE.demoTimer = setInterval(function () {
@@ -440,7 +635,6 @@
         FR_STATE.pct = 100; clearInterval(FR_STATE.demoTimer); FR_STATE.demoTimer = null;
         FR_STATE.step = 2; renderFirstRun(); return;
       }
-      // update only the moving bits
       var ring = document.querySelector('#a-firstrun .dl-ring');
       var pct = document.querySelector('#a-firstrun .dl-pct');
       var bar = document.querySelector('#a-firstrun .fr-bar i');

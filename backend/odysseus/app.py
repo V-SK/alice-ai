@@ -735,6 +735,17 @@ try:
 except Exception as _alice_exc:  # noqa: BLE001
     logger.warning("Alice provider registration failed: %s", _alice_exc, exc_info=True)
 
+# Model Manager routes (M4 — PLAN §3 / design 03 §9): /alice/models, /recommend,
+# /gate, /ensure (SSE), /load, /context, /current, /device. Device-sized,
+# verified (SHA-256), switchable; Alice-only display names. The picker +
+# first-run overlays (M3) call these for real catalog data + a real download.
+try:
+    from alice_routes import register_alice_routes
+    register_alice_routes(app)
+    logger.info("Alice Model Manager routes registered (/alice/*)")
+except Exception as _alice_mm_exc:  # noqa: BLE001
+    logger.warning("Alice Model Manager routes registration failed: %s", _alice_mm_exc, exc_info=True)
+
 # Shell health probe (PLAN §2.2): the native shell waits on GET /healthz before
 # showing the window. odysseus's own check is /api/health; expose a top-level
 # /healthz alias the shell can poll without auth (it is added before the auth

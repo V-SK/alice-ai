@@ -220,65 +220,29 @@ def _build_engine() -> _Engine:
             downloaded=False,
         )
 
-    # --- Real path: plan for the explicit Alice Lite tier on this hardware. ---
-    probe, memory = probe_local_host()
-    plan = plan_for_explicit_tier(probe, memory, ALICE_DEFAULT_TIER)
-    artifact = plan.artifact
-    runtime = plan.runtime
+    # --- Real path: delegate to the M4 Model Manager (PLAN §3). ---
+    # The Model Manager owns device-sized download+VERIFY (per-file SHA-256),
+    # the per-model context-size control, the VRAM/RAM gate, and switching. The
+    # provider just asks it to load the active tier (the user's persisted choice,
+    # else the 小白 default Alice Lite) and reads back its loaded backend.
+    from alice_routes import get_manager
+
+    manager = get_manager()
+    tier = manager.persisted_tier() or ALICE_DEFAULT_TIER
+    backend = manager.load(tier)  # gate → ensure_ready (SHA-verified) → load
+    loaded = backend._model  # noqa: SLF001 — the context-sized LoadedModel
+    runtime = manager._runtime_for_tier(tier)  # noqa: SLF001
     logger.info(
-        "[alice_provider] tier=%s runtime=%s model_id=%s repo=%s",
-        plan.model_class, runtime, artifact.model_id, artifact.repo_id,
+        "[alice_provider] Model Manager loaded tier=%s runtime=%s context=%s",
+        tier, runtime, manager.active_context_length(),
     )
-
-    # Whole-snapshot downloader (MLX needs every file, not just config.json).
-    def _whole_snapshot_downloader(art, target_dir: Path) -> None:
-        from huggingface_hub import snapshot_download
-
-        snapshot_download(
-            repo_id=art.repo_id,
-            revision=art.revision,
-            local_dir=str(target_dir),
-        )
-
-    resolver = LocalModelResolver(
-        cache_root=ALICE_MODELS_DIR,
-        downloader=_whole_snapshot_downloader,
-    )
-    resolved = resolver.resolve(artifact)
-    logger.info(
-        "[alice_provider] resolved %s (%s) downloaded=%s",
-        artifact.model_id, resolved.reason_code, resolved.downloaded,
-    )
-
-    adapter = real_adapter_for(runtime)
-    backend = RealModelTextBackend(
-        artifact=artifact,
-        adapter=adapter,
-        snapshot_dir=resolved.snapshot_dir,
-        default_params=GenerationParams(max_output_tokens=ALICE_DEFAULT_MAX_TOKENS),
-    )
-    # Load eagerly now (we are already off the request path during warm-up) so
-    # the first chat streams immediately.
-    #
-    # We load via the runtime's own loader on the SNAPSHOT DIRECTORY (the correct
-    # call) and inject the loaded model into the backend's lazy cache. This
-    # reuses Track-A's generate/usage/output_hash logic (via its LoadedModel
-    # wrapper) while sidestepping a latent path bug in its MLX adapter: that
-    # adapter loads ``Path(snapshot_dir)/artifact_subpath`` and for MLX
-    # ``artifact_subpath == "config.json"``, so newer mlx_lm then opens
-    # ``.../config.json/config.json`` (NotADirectoryError). The subpath is meant
-    # for the resolver's *existence* check, not the load path. We cannot edit
-    # alice-acp, so we load correctly here and pre-populate ``backend._model``.
-    loaded = _load_pinned(resolved.snapshot_dir, runtime, artifact)
-    backend._model = loaded  # noqa: SLF001 — pre-seed Track-A's lazy cache
-    logger.info("[alice_provider] model loaded: %s", artifact.model_id)
     return _Engine(
-        tier=plan.model_class,
+        tier=tier,
         runtime=runtime,
-        model_id=artifact.model_id,
+        model_id=backend.artifact.model_id,
         backend=backend,
         loaded=loaded,
-        downloaded=resolved.downloaded,
+        downloaded=True,
     )
 
 
@@ -354,14 +318,53 @@ class _OverrideLlamaLoaded:
         self._llm = llm
 
 
+def _reconcile_with_manager() -> Optional[_Engine]:
+    """If the Model Manager has an active backend that differs from our cached
+    engine (i.e. the user switched tiers / context via /alice/load), wrap it.
+
+    The manager already loaded + context-sized the model, so this is just a
+    cheap re-wrap of the resident backend — no reload. Returns the (new) engine
+    or None when no manager / no active backend (e.g. the dev-override path).
+    """
+    if _OVERRIDE_MODEL_DIR:
+        return None  # dev override owns the engine; the manager is not involved
+    try:
+        from alice_routes import get_manager
+
+        manager = get_manager()
+        active = manager.infer_backend()
+    except Exception:  # noqa: BLE001
+        return None
+    if active is None:
+        return None
+    if _engine is not None and _engine.backend is active:
+        return _engine  # unchanged
+    loaded = active._model  # noqa: SLF001
+    tier = manager._active_tier  # noqa: SLF001
+    return _Engine(
+        tier=tier,
+        runtime=manager._runtime_for_tier(tier),  # noqa: SLF001
+        model_id=active.artifact.model_id,
+        backend=active,
+        loaded=loaded,
+        downloaded=True,
+    )
+
+
 def get_engine() -> _Engine:
     """Return the resident engine, building (and possibly downloading+loading)
     it on first call. Thread-safe; raised build errors are cached so repeated
-    chats don't re-attempt a hopeless load on every keystroke."""
+    chats don't re-attempt a hopeless load on every keystroke.
+
+    Reconciles with the Model Manager on every call so a model SWITCH (via
+    POST /alice/load) is picked up by the next chat without a restart.
+    """
     global _engine, _engine_error
-    if _engine is not None:
-        return _engine
     with _engine_lock:
+        reconciled = _reconcile_with_manager()
+        if reconciled is not None:
+            _engine = reconciled
+            return _engine
         if _engine is not None:
             return _engine
         if _engine_error is not None:

@@ -82,6 +82,16 @@
     'picker.h':        { en: 'Choose a model · all run on this device', zh: '选择模型 · 全部在本机运行' },
     'picker.foot':     { en: 'Names are Alice tiers — your hardware picks the fit.', zh: '这些是 Alice 的型号——由你的硬件决定适配。' },
 
+    // ---- per-model context-size control (4k..model max) ----
+    'context.label':   { en: 'Context length', zh: '上下文长度' },
+    'context.hint':    { en: 'Longer context remembers more — uses more memory.', zh: '上下文越长，记得越多——占用内存也越多。' },
+    'context.warn':    { en: 'This length is tight for your memory — Alice may run slowly.', zh: '该长度对你的内存偏紧——Alice 可能会变慢。' },
+    'download.verifying': { en: 'Verifying download…', zh: '正在校验下载…' },
+
+    // ---- model gate (honest, before loading a model too big) ----
+    'gate.warn':       { en: 'This model is tight for your computer and may run slowly. Continue?', zh: '该模型对你的电脑偏紧、可能较慢。仍要继续吗？' },
+    'gate.refuse':     { en: 'This model needs more memory than your computer has. Try a smaller Alice.', zh: '该模型所需内存超过你的电脑。请选择更小的 Alice。' },
+
     // ---- settings (Simple) ----
     'settings.model':   { en: 'Model', zh: '模型' },
     'settings.change':  { en: 'Change', zh: '更换' },

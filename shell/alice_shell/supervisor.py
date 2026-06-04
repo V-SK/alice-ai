@@ -43,6 +43,15 @@ class BackendProcess:
         # The backend binds this and alice_provider seeds its endpoint here.
         env["ALICE_BACKEND_PORT"] = str(self.port)
         env.setdefault("ALICE_AI_MODELS_DIR", str(paths.models_dir()))
+        # The backend runs from backend/odysseus/ (so its sibling alice_provider
+        # / alice_routes import by cwd), but those import OUR alice_ai.* package
+        # which lives one level up at backend/. Put backend/ on PYTHONPATH so the
+        # Model Manager (M4) + earn glue (M7) resolve. alice_acp is a pip
+        # editable install, so it does not need a path entry.
+        backend_root = str(paths.backend_dir().parent)
+        existing = env.get("PYTHONPATH", "")
+        parts = [backend_root] + ([existing] if existing else [])
+        env["PYTHONPATH"] = os.pathsep.join(parts)
         # Quiet odysseus's background pollers that are useless for a local chat
         # spine (they only add log noise + cold-start pings).
         env.setdefault("ODYSSEUS_INPROCESS_TASKS", "0")

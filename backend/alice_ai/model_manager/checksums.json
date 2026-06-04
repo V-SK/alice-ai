@@ -1,0 +1,131 @@
+{
+  "schema_version": "alice-ai-model-manager-checksums-v1",
+  "source_manifest_revision": "q26-owner-tier-canonical-hf-model-artifact-manifest-2026-05-28",
+  "note": "Vendored build-time from the canonical miner HF artifact manifest (per-file SHA-256, public HF LFS metadata, no large download). Keyed by '<repo>@<revision>'. The Model Manager cross-checks every downloadable pin against this at init (fail-closed on a pin without a checksum or a repo/revision drift). MLX-only for 4B/9B/35B today; the GGUF repos for those tiers fall back to the HF-published LFS OID (downloader \u00a75.3).",
+  "artifacts": {
+    "v102ss/Alice-Qwen3.5-4B-Heretic-Light-MLX-4bit@9f3bcd0f0c89fae11e2d316a004e9ee78c8c26b6": {
+      "repo_id": "v102ss/Alice-Qwen3.5-4B-Heretic-Light-MLX-4bit",
+      "revision": "9f3bcd0f0c89fae11e2d316a004e9ee78c8c26b6",
+      "format": "mlx-safetensors",
+      "runtime": "mlx",
+      "artifact_set_sha256": "305a4579a24682e2ab331ace565bfb35759a9eb256d10532beffe0e16f897600",
+      "files": [
+        {
+          "path": "model.safetensors",
+          "size_bytes": 2367237149,
+          "sha256": "ad8f7e9b3499d13a6ea32ba5f960b946c7f755335f316dbedc2d60d26376b188"
+        }
+      ]
+    },
+    "v102ss/Alice-Qwen3.5-9B-Code-v0-MLX-8bit@c1a601690305ac362a812c211caedb5e28174c61": {
+      "repo_id": "v102ss/Alice-Qwen3.5-9B-Code-v0-MLX-8bit",
+      "revision": "c1a601690305ac362a812c211caedb5e28174c61",
+      "format": "mlx-safetensors",
+      "runtime": "mlx",
+      "artifact_set_sha256": "340583f69d44c35dd60f175f145bf8d630e3e48a64f6ff9badfde312bf4c2264",
+      "files": [
+        {
+          "path": "model-00001-of-00002.safetensors",
+          "size_bytes": 5346606478,
+          "sha256": "0177f3e2361a43382f580461391d9eee30bdb70509d3af933d0a134968ce4793"
+        },
+        {
+          "path": "model-00002-of-00002.safetensors",
+          "size_bytes": 4167925545,
+          "sha256": "080bb6a4f138b307363fa032e2624e9038b4c665ef8a17cc6dea1f8e84391d27"
+        }
+      ]
+    },
+    "v102ss/Alice-Qwen3.6-27B-Code-Heretic-MTP-GGUF@687fe3249b671fac41864d70b10e54f803df652c": {
+      "repo_id": "v102ss/Alice-Qwen3.6-27B-Code-Heretic-MTP-GGUF",
+      "revision": "687fe3249b671fac41864d70b10e54f803df652c",
+      "format": "gguf",
+      "runtime": "gguf",
+      "artifact_set_sha256": "f47c8d9b949fb46c98a5d734dd48ba8ce67fe2168027a1937915f32cb9736d93",
+      "files": [
+        {
+          "path": "Alice-Qwen3.6-27B-Code-Heretic-MTP-Q8_0.gguf",
+          "size_bytes": 29047084000,
+          "sha256": "2588f4ac7aca14376ae01d02623c983925f3faee54276d189027faf2f931ab76"
+        }
+      ]
+    },
+    "v102ss/Alice-Qwen3.6-35B-A3B-Heretic-MLX-8bit@3e1d67b0514fab00995acd3f522b025f7aa4502d": {
+      "repo_id": "v102ss/Alice-Qwen3.6-35B-A3B-Heretic-MLX-8bit",
+      "revision": "3e1d67b0514fab00995acd3f522b025f7aa4502d",
+      "format": "mlx-safetensors",
+      "runtime": "mlx",
+      "artifact_set_sha256": "d688b690bbd2f62191900390177a2d8e982e6b860c48d68168e52a5ef31c1448",
+      "files": [
+        {
+          "path": "model-00001-of-00008.safetensors",
+          "size_bytes": 5329916013,
+          "sha256": "e99615b84e3979a1d94bb67d6b533b6d6245191ffe09af60dce7a45a50a58405"
+        },
+        {
+          "path": "model-00002-of-00008.safetensors",
+          "size_bytes": 5365573922,
+          "sha256": "148a9b6801267c729f597bce76ad431ab99027b65db4668ee2415524e402b36e"
+        },
+        {
+          "path": "model-00003-of-00008.safetensors",
+          "size_bytes": 5358684668,
+          "sha256": "7344bb0a0228f6923224eba38d4494fbd1e65e429a78b7631d95ecbb6c6fc93f"
+        },
+        {
+          "path": "model-00004-of-00008.safetensors",
+          "size_bytes": 5365574194,
+          "sha256": "3f14adbfef7dc143bfb55b02d4f76369d192f1f69587262bfbec85fbe92f7c20"
+        },
+        {
+          "path": "model-00005-of-00008.safetensors",
+          "size_bytes": 5358684644,
+          "sha256": "c085aa6cba587edd0f9ca7e71b534c6f292aa30e7725cbb2f44460cd512c3231"
+        },
+        {
+          "path": "model-00006-of-00008.safetensors",
+          "size_bytes": 5365574174,
+          "sha256": "ca1a18d03ed6cdf157ceb6814f874bbabf75139656dd1674babc458b72e72ae9"
+        },
+        {
+          "path": "model-00007-of-00008.safetensors",
+          "size_bytes": 5037050574,
+          "sha256": "5ebf35d876365acaf61325655e27b02f5b282737c4c9a2999279368639b7dd81"
+        },
+        {
+          "path": "model-00008-of-00008.safetensors",
+          "size_bytes": 540344667,
+          "sha256": "145818a7e8f32071c56f6f817aa452aff235745f82033f141f07f5f6f7bc41c6"
+        }
+      ]
+    },
+    "v102ss/Alice-Qwopus3.5-9B-RP-GGUF@16e9f0f1324e2786ee1858e1229df36c5d0ab194": {
+      "repo_id": "v102ss/Alice-Qwopus3.5-9B-RP-GGUF",
+      "revision": "16e9f0f1324e2786ee1858e1229df36c5d0ab194",
+      "format": "gguf",
+      "runtime": "gguf",
+      "artifact_set_sha256": "3be40fae97e84eb4269559b2a810433e722cf5fed416a8afb5971f2ad52874ea",
+      "files": [
+        {
+          "path": "Alice-Qwopus3.5-9B-RP-Q4_K_M.gguf",
+          "size_bytes": 5629104896,
+          "sha256": "77e6294c089337434dd1b443badb99c7868cf629291bb8f06fabb035305a7368"
+        }
+      ]
+    },
+    "v102ss/Alice-BlueStar-v2-27B-RP-GGUF@2b252c89a056726e76ce0ff29be90d1f0173ce5f": {
+      "repo_id": "v102ss/Alice-BlueStar-v2-27B-RP-GGUF",
+      "revision": "2b252c89a056726e76ce0ff29be90d1f0173ce5f",
+      "format": "gguf",
+      "runtime": "gguf",
+      "artifact_set_sha256": "0ccf2f5d6de14086bf64650434328fcdb3a0aadcb7d487f96954627fdc681b16",
+      "files": [
+        {
+          "path": "Alice-BlueStar-v2-27B-RP-Q5_K_M.gguf",
+          "size_bytes": 19231097984,
+          "sha256": "4083d404274dbf25d44f5e1d94dc581dc5ae4752dedee83df580db2fbc193672"
+        }
+      ]
+    }
+  }
+}
