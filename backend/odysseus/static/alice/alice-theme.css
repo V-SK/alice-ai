@@ -1,0 +1,304 @@
+/* ============================================================================
+   Alice AI — brand skin over the odysseus frontend (M3).
+   Loaded LAST (after style.css) so its declarations win.
+
+   Strategy (PLAN §2.3 / design 05 §9):
+   · Define the LOCKED Alice token contract in :root (verbatim from the Miner
+     mockup the owner approved — orange #F97316 spine, near-black zinc surfaces).
+   · Map those tokens onto odysseus's runtime CSS vars (--bg/--fg/--panel/
+     --border/--red + the --*-bubble-* / --send-btn-* family) so the existing
+     ~1.1 MB of odysseus CSS repaints in Alice colours with no rewrite.
+   · Refine the high-impact chat surfaces (background, sidebar, top bar, bubbles,
+     code blocks, composer, send) to the mockup look.
+   · Bundle Inter + JetBrains Mono + Noto Sans SC (no CDN; CSP font-src 'self').
+   · NO emoji anywhere. Depth = layered opaque surfaces + gradients + 1px borders
+     + soft drop-shadows + additive radial glow (never backdrop-blur).
+   ============================================================================ */
+
+/* ---- Fonts: bundled woff2 in /static/fonts (offline-first, CSP 'self') ---- */
+/* Inter is already declared by index.html. Add JetBrains Mono + Noto Sans SC. */
+@font-face{font-family:'JetBrains Mono';font-weight:400;font-style:normal;font-display:swap;src:url('/static/fonts/JetBrainsMono-Regular.woff2') format('woff2');}
+@font-face{font-family:'JetBrains Mono';font-weight:700;font-style:normal;font-display:swap;src:url('/static/fonts/JetBrainsMono-Bold.woff2') format('woff2');}
+/* Noto Sans SC = the CJK fallback for BOTH families (中 first-class). */
+@font-face{font-family:'Noto Sans SC';font-weight:400;font-style:normal;font-display:swap;src:url('/static/fonts/NotoSansSC-Subset.woff2') format('woff2');}
+@font-face{font-family:'Noto Sans SC';font-weight:600;font-style:normal;font-display:swap;src:url('/static/fonts/NotoSansSC-Subset.woff2') format('woff2');}
+
+:root{
+  /* ---- Brand orange (the spine) — verbatim from the locked contract ---- */
+  --a-brand-50:#FFF7ED;--a-brand-100:#FFEDD5;--a-brand-200:#FED7AA;--a-brand-300:#FDBA74;
+  --a-brand-400:#FB923C;--a-brand-500:#F97316;--a-brand-600:#EA580C;--a-brand-700:#C2410C;--a-brand-800:#9A3412;
+  --a-brand:var(--a-brand-500);--a-brand-strong:var(--a-brand-600);
+
+  /* ---- Surfaces (near-opaque so depth survives without blur) ---- */
+  --a-bg:#050505;--a-bg-2:#0A0A0A;
+  --a-surface:#161618;--a-surface-2:#1E1E22;--a-surface-3:#242429;
+  --a-elevate:linear-gradient(180deg,#232327,#0C0C0E);
+  --a-well:#08080A;
+
+  /* ---- Lines / borders ---- */
+  --a-line:rgba(63,63,70,0.55);--a-line-strong:rgba(82,82,91,0.65);--a-line-brand:rgba(249,115,22,0.32);
+  --a-hair-top:rgba(255,255,255,0.06);
+
+  /* ---- Text ---- */
+  --a-text:#FAFAFA;--a-text-2:#A1A1AA;--a-text-3:#71717A;--a-text-4:#52525B;--a-text-brand:#FDBA74;
+
+  /* ---- Status & accents ---- */
+  --a-live:#22C55E;--a-warn:#F59E0B;--a-info:#3B82F6;--a-violet:#A855F7;--a-off:#52525B;--a-err:#EF4444;
+  --tier-lite:#22D3EE;--tier-std:#FB923C;--tier-pro:#A855F7;--tier-rp:#F472B6;
+
+  /* ---- Radius ---- */
+  --a-radius:1rem;--a-radius-sm:.625rem;--a-radius-lg:1.25rem;--a-radius-xl:1.5rem;
+
+  /* ---- Elevation: layered soft drop-shadows + inset top highlight ---- */
+  --a-card:0 0 0 1px rgba(0,0,0,.4), 0 1px 0 var(--a-hair-top) inset, 0 2px 4px rgba(0,0,0,.30), 0 12px 28px -8px rgba(0,0,0,.55);
+  --a-card-lg:0 0 0 1px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.07) inset, 0 4px 10px rgba(0,0,0,.35), 0 30px 70px -22px rgba(0,0,0,.7);
+  --a-glow:0 0 30px rgba(249,115,22,.42);--a-glow-soft:0 0 18px rgba(249,115,22,.22);
+
+  --a-ease:cubic-bezier(.22,1,.36,1);--a-dur:.2s;
+  --a-font-sans:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  --a-font-mono:'JetBrains Mono','Noto Sans SC','SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+
+  /* ===== MAP Alice tokens onto odysseus's runtime vars (so its CSS repaints) =====
+     theme.js / the head-script also force these from localStorage, but pinning
+     them here makes the skin robust even on the very first paint / if JS lags. */
+  --bg:var(--a-bg);
+  --fg:var(--a-text);
+  --panel:var(--a-surface);
+  --border:var(--a-line);
+  --red:var(--a-brand-500);
+  --brand-color:var(--a-brand-500);
+  --accent-primary:var(--a-brand-500);
+  --accent:var(--a-brand-500);
+  --accent-error:var(--a-err);
+  --section-accent:var(--a-brand-300);
+  --user-bubble-bg:linear-gradient(180deg,var(--a-surface-2),#16161a);
+  --ai-bubble-bg:transparent;
+  --bubble-border:var(--a-line);
+  --sidebar-bg:linear-gradient(180deg,#0c0c0e,#0a0a0c);
+  --input-bg:var(--a-well);
+  --input-border:var(--a-line-strong);
+  --send-btn-bg:linear-gradient(180deg,#FDBA74,var(--a-brand-500) 56%,var(--a-brand-600));
+  --send-btn-hover:linear-gradient(180deg,#FDBA74,var(--a-brand-500) 40%,var(--a-brand-600));
+  --code-bg:var(--a-well);
+  --code-fg:#d7d7db;
+  --toggle-active:var(--a-brand-500);
+  /* font family odysseus reads (--font-family) — Inter UI everywhere */
+  --font-family:var(--a-font-sans);
+
+  /* derived syntax palette — restrained, matches the mockup code block */
+  --hl-bg:var(--a-well);--hl-fg:#d7d7db;
+  --hl-keyword:#FB923C;--hl-string:#86efac;--hl-comment:#52525b;
+  --hl-function:#7dd3fc;--hl-number:#FDBA74;--hl-builtin:#22D3EE;
+  --hl-variable:#e4e4e7;--hl-params:#d4d4d8;
+}
+
+/* The page background = the mockup's vignette + dual brand/violet auras. */
+html,body{background:var(--a-bg);}
+body{
+  font-family:var(--a-font-sans);
+  color:var(--a-text);
+  letter-spacing:-0.003em;
+  background:
+    radial-gradient(1100px 620px at 50% -8%, rgba(249,115,22,.10), transparent 60%),
+    radial-gradient(900px 520px at 100% 108%, rgba(168,85,247,.05), transparent 55%),
+    radial-gradient(700px 700px at -5% 60%, rgba(59,130,246,.04), transparent 60%),
+    radial-gradient(1200px 900px at 50% 40%, #0A0A0C, #050505 70%),
+    var(--a-bg) !important;
+}
+.mono,.a-mono{font-family:var(--a-font-mono);font-variant-numeric:tabular-nums;letter-spacing:0;}
+::selection{background:rgba(249,115,22,.30);color:#fff;}
+
+/* The odysseus app uses 'Fira Code' as its code/mono var default; map the few
+   numeric/code spots to JetBrains Mono via --font-family fallbacks. The code
+   block font is set explicitly where odysseus hardcodes Fira Code. */
+pre,code,kbd,samp,.mono,.token-count,.session-cost-display,.model-meta,.sidebar-version{
+  font-family:var(--a-font-mono) !important;
+}
+
+/* ============================================================================
+   App loader (boot splash) — Alice mark breathing glow, not the ASCII wave.
+   alice-skin.js replaces the wave node; this styles its replacement.
+   ============================================================================ */
+#app-loader{background:var(--a-bg) !important;}
+.a-loader-mark{width:62px;height:62px;line-height:0;filter:drop-shadow(0 0 12px rgba(249,115,22,.45));
+  animation:aMarkBreathe 3.4s ease-in-out infinite;}
+.a-loader-mark svg{width:62px;height:62px;display:block;}
+.a-loader-mark svg path{fill:var(--a-brand-400);}
+.a-loader-cap{margin-top:14px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--a-text-3);font-weight:600;}
+@keyframes aMarkBreathe{0%,100%{filter:drop-shadow(0 0 12px rgba(249,115,22,.45))}50%{filter:drop-shadow(0 0 24px rgba(249,115,22,.75))}}
+
+/* ============================================================================
+   SIDEBAR (= mockup conversation sidebar). odysseus calls it .sidebar.
+   ============================================================================ */
+.sidebar{background:linear-gradient(180deg,#0c0c0e,#0a0a0c) !important;border-right:1px solid var(--a-line) !important;}
+.sidebar-brand-title{font-weight:700;letter-spacing:-.01em;color:var(--a-text);}
+/* the Alice mark we inject before the title */
+.a-brand-mark{width:22px;height:22px;display:inline-grid;place-items:center;border-radius:7px;flex:none;
+  background:radial-gradient(120% 120% at 50% 0%,#202024,#0c0c0e);position:relative;margin-right:9px;}
+.a-brand-mark::after{content:"";position:absolute;inset:0;border-radius:7px;box-shadow:0 0 12px rgba(249,115,22,.3);}
+.a-brand-mark svg{width:15px;height:15px;display:block;}
+.a-brand-mark svg path{fill:var(--a-brand-400);}
+.sidebar-brand{display:flex;align-items:center;}
+
+/* "New Chat" list-item → the orange spine accent (mockup .cs-new) */
+#sidebar-new-chat-btn{
+  color:#2A0E00 !important;font-weight:650;
+  background:linear-gradient(180deg,#FDBA74,var(--a-brand-500) 56%,var(--a-brand-600)) !important;
+  border-radius:10px !important;margin:4px 0 2px !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.32) inset,var(--a-glow-soft);transition:var(--a-dur) var(--a-ease);}
+#sidebar-new-chat-btn:hover{box-shadow:0 1px 0 rgba(255,255,255,.4) inset,var(--a-glow);}
+#sidebar-new-chat-btn .sidebar-action-icon{stroke:#2A0E00 !important;}
+#sidebar-new-chat-btn .grow{color:#2A0E00 !important;}
+
+/* section titles → the uppercase eyebrow grammar */
+.section-title-label,.section-title{color:var(--a-text-4);}
+.section-title-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;}
+
+/* session rows */
+.session-item,.list-item{border:1px solid transparent;border-radius:9px;color:var(--a-text-2);transition:var(--a-dur) var(--a-ease);}
+.session-item:hover,.list-item:hover{background:var(--a-surface-2);color:var(--a-text);}
+.session-item.active,.session-item.selected{
+  background:linear-gradient(180deg,rgba(249,115,22,.10),rgba(249,115,22,.03)) !important;
+  color:var(--a-text) !important;border-color:var(--a-line-brand) !important;}
+
+/* ============================================================================
+   TOP BAR (= mockup .cm-top) — model indicator + privacy pill
+   ============================================================================ */
+.chat-top-bar{border-bottom:1px solid var(--a-line);background:linear-gradient(180deg,rgba(12,12,14,.86),rgba(10,10,12,.7));}
+.chat-meta-overlay #current-meta{color:var(--a-text-2);font-weight:600;}
+
+/* The privacy pill (injected by skin into the top bar) */
+.a-priv-pill{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--a-text-3);font-weight:500;
+  border:1px solid var(--a-line);border-radius:999px;padding:5px 11px;background:rgba(20,20,22,.5);white-space:nowrap;}
+.a-priv-pill svg{width:13px;height:13px;color:var(--a-live);stroke:var(--a-live);stroke-width:1.5;fill:none;}
+
+/* ============================================================================
+   MESSAGE THREAD + BUBBLES (= mockup .msg / .bubble)
+   ============================================================================ */
+.chat-history,#chat-history{background:radial-gradient(900px 480px at 50% -12%, rgba(249,115,22,.05), transparent 62%);}
+
+/* user message = raised zinc pill, right-weighted */
+.message.user .message-content,.msg-user .bubble,.user-message .message-bubble{
+  background:linear-gradient(180deg,var(--a-surface-2),#16161a) !important;
+  border:1px solid var(--a-line) !important;border-radius:13px !important;
+  color:var(--a-text) !important;box-shadow:0 1px 0 rgba(255,255,255,.04) inset;}
+
+/* assistant message = full-width, no pill */
+.message.assistant .message-content,.assistant-message .message-bubble,.ai-message .message-bubble{
+  background:transparent !important;border:none !important;color:var(--a-text) !important;}
+
+.message strong,.message-content strong,.bubble strong{color:#fff;font-weight:700;}
+.message a,.message-content a{color:var(--a-brand-300);}
+/* inline code */
+.message-content code:not(pre code),.bubble code.inl,p code{
+  font-family:var(--a-font-mono) !important;font-size:12.5px;background:var(--a-well) !important;
+  border:1px solid var(--a-line) !important;border-radius:6px;padding:1px 6px;color:var(--a-brand-300) !important;}
+/* bullet markers */
+.message-content li::marker,.bubble li::marker{color:var(--a-brand-400);}
+
+/* the Alice avatar (a dark core with the glowing mark) where odysseus shows one */
+.a-ai-avatar{width:30px;height:30px;flex:none;border-radius:9px;display:grid;place-items:center;position:relative;
+  background:radial-gradient(120% 120% at 50% 0%,#202024,#0c0c0e);
+  box-shadow:0 1px 2px rgba(0,0,0,.5),0 0 0 1px rgba(249,115,22,.14) inset;}
+.a-ai-avatar::after{content:"";position:absolute;inset:0;border-radius:9px;box-shadow:0 0 14px rgba(249,115,22,.3);}
+.a-ai-avatar svg{width:18px;height:18px;}.a-ai-avatar svg path{fill:var(--a-brand-400);}
+
+/* ============================================================================
+   CODE BLOCKS (= mockup .code) — well aesthetic + chrome header
+   ============================================================================ */
+.message-content pre,.code-block,pre.hljs,pre{
+  border-radius:11px;overflow:hidden;border:1px solid var(--a-line-strong) !important;
+  background:var(--a-well) !important;box-shadow:0 2px 10px rgba(0,0,0,.4) inset;}
+.message-content pre code,pre code,.hljs{
+  background:transparent !important;font-family:var(--a-font-mono) !important;font-size:12.5px;line-height:1.7;color:#d7d7db !important;}
+/* odysseus's code header chrome (lang label + copy) */
+.code-header,.code-block-header,.codeblock-header{
+  background:linear-gradient(180deg,rgba(255,255,255,.02),transparent) !important;
+  border-bottom:1px solid var(--a-line) !important;color:var(--a-text-3) !important;}
+.code-header .lang,.code-lang{font-family:var(--a-font-mono) !important;color:var(--a-text-2) !important;}
+.copy-code-btn,.code-copy-btn{border:1px solid var(--a-line) !important;border-radius:7px !important;color:var(--a-text-3) !important;
+  background:transparent !important;transition:var(--a-dur) var(--a-ease);}
+.copy-code-btn:hover,.code-copy-btn:hover{border-color:var(--a-line-brand) !important;color:var(--a-text-brand) !important;}
+
+/* ============================================================================
+   COMPOSER (= mockup .composer) — well box, focus-orange, glowing send
+   ============================================================================ */
+.chat-input-bar{background:linear-gradient(180deg,transparent,rgba(5,5,5,.7) 40%);}
+.chat-input-top{
+  background:var(--a-well) !important;border:1px solid var(--a-line-strong) !important;
+  border-radius:16px !important;box-shadow:0 2px 10px rgba(0,0,0,.4) inset,0 8px 26px -12px rgba(0,0,0,.7);
+  transition:var(--a-dur) var(--a-ease);}
+.chat-input-top:focus-within{
+  border-color:var(--a-line-brand) !important;
+  box-shadow:0 0 0 3px rgba(249,115,22,.10),0 2px 10px rgba(0,0,0,.4) inset !important;}
+#message,textarea#message{background:transparent !important;color:var(--a-text) !important;font-family:var(--a-font-sans) !important;}
+#message::placeholder{color:var(--a-text-4) !important;}
+
+/* the send button → glowing orange paper-plane */
+#send-btn,.send-btn,button.send,#chat-send{
+  background:linear-gradient(180deg,#FDBA74,var(--a-brand-500) 56%,var(--a-brand-600)) !important;
+  border:none !important;border-radius:10px !important;color:#2A0E00 !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.32) inset,var(--a-glow-soft);transition:var(--a-dur) var(--a-ease);}
+#send-btn:hover,.send-btn:hover,button.send:hover,#chat-send:hover{box-shadow:0 1px 0 rgba(255,255,255,.4) inset,var(--a-glow) !important;}
+#send-btn svg,.send-btn svg{stroke:#2A0E00 !important;color:#2A0E00 !important;}
+
+/* the model-picker control inside the composer (mockup .model-pick) */
+.model-picker-btn{
+  border:1px solid var(--a-line) !important;border-radius:10px !important;
+  background:linear-gradient(180deg,#1a1a1d,#121214) !important;color:var(--a-text) !important;
+  font-weight:650;transition:var(--a-dur) var(--a-ease);}
+.model-picker-btn:hover{border-color:var(--a-line-brand) !important;}
+#model-picker-label{color:var(--a-text);font-weight:650;}
+
+/* the composer reassurance note (injected by skin) */
+.a-composer-note{max-width:760px;margin:9px auto 0;text-align:center;font-size:10.5px;color:var(--a-text-4);line-height:1.5;}
+.a-composer-note b{color:var(--a-text-3);font-weight:600;}
+.a-pending{color:var(--a-brand-300);font-weight:600;}
+
+/* generic buttons / toggles repaint */
+button.primary,.btn-primary,.confirm-btn-primary{
+  background:linear-gradient(180deg,#FDBA74,var(--a-brand-500) 56%,var(--a-brand-600)) !important;color:#2A0E00 !important;border:none !important;}
+input:focus,textarea:focus,select:focus{outline:none;}
+
+/* ============================================================================
+   WELCOME / EMPTY STATE (= mockup empty state: glowing mark + greeting + chips)
+   ============================================================================ */
+#welcome-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.welcome-name{display:flex;flex-direction:column;align-items:center;gap:16px;font-size:0;color:transparent;}
+/* hide odysseus's boat; the skin injects an Alice hero mark before it */
+.welcome-boat{display:none !important;}
+.a-hero-mark{width:64px;height:64px;line-height:0;filter:drop-shadow(0 0 18px rgba(249,115,22,.5));animation:aMarkBreathe 3.4s ease-in-out infinite;}
+.a-hero-mark svg{width:64px;height:64px;display:block;}.a-hero-mark svg path{fill:var(--a-brand-400);}
+.a-hero-title{font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--a-text);}
+.a-hero-trust{font-size:13px;color:var(--a-text-3);font-weight:500;margin-top:-6px;}
+.welcome-sub,.welcome-tip{color:var(--a-text-3);}
+/* starter chips */
+.a-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:560px;margin:22px auto 0;}
+.a-chip{font-size:12.5px;color:var(--a-text-2);font-weight:500;padding:9px 14px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--a-line);background:rgba(20,20,22,.6);transition:var(--a-dur) var(--a-ease);}
+.a-chip:hover{border-color:var(--a-line-brand);color:var(--a-text);transform:translateY(-1px);box-shadow:var(--a-glow-soft);}
+
+/* hide odysseus's "type /setup" + Nobody mode in the welcome for 小白 (Simple) */
+html:not(.a-advanced) .setup-trigger-link,
+html:not(.a-advanced) #welcome-tip,
+html:not(.a-advanced) .incognito-btn{display:none !important;}
+
+/* ============================================================================
+   SIMPLE / ADVANCED progressive disclosure.
+   Default = Simple. <html> gets class `a-advanced` when the toggle is ON.
+   In Simple mode, hide odysseus's power chrome (agents/tools/RAG/apps/etc).
+   Marked elements get the `a-adv-only` class from alice-skin.js; CSS hides them.
+   ============================================================================ */
+html:not(.a-advanced) .a-adv-only{display:none !important;}
+
+/* ============================================================================
+   The reusable Alice mark glyph (text/SVG, no emoji).
+   ============================================================================ */
+.a-tier-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;}
+.a-ic{stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;fill:none;display:block;}
+
+/* reduce-motion: freeze the breathing + carets */
+@media (prefers-reduced-motion: reduce){
+  .a-loader-mark,.a-hero-mark,.dl-core .mark,.dl-aura{animation:none !important;}
+  .a-caret{animation:none !important;opacity:1 !important;}
+}
