@@ -284,10 +284,17 @@ class IdentityReadOnlyTests(unittest.TestCase):
     def test_identity_dir_honors_override(self):
         from alice_ai.earn import identity_reader as ir
 
-        _set_env(ALICE_IDENTITY_DIR="/tmp/some-test-dir")
-        self.assertEqual(str(ir.identity_dir()), "/tmp/some-test-dir")
+        # Use a tmp dir from the OS so the path comparison is platform-portable
+        # (a literal "/tmp/…" renders as "\tmp\…" on Windows). Compare resolved
+        # Path objects rather than raw strings.
+        with tempfile.TemporaryDirectory() as td:
+            override = Path(td) / "some-test-dir"
+            _set_env(ALICE_IDENTITY_DIR=str(override))
+            self.assertEqual(Path(ir.identity_dir()), override)
         _set_env(ALICE_IDENTITY_DIR=None)
-        self.assertTrue(str(ir.identity_dir()).endswith("/.alice"))
+        # Default falls back to ~/.alice on every OS (compare the final path
+        # component, not a "/"-joined suffix which differs on Windows).
+        self.assertEqual(Path(ir.identity_dir()).name, ".alice")
 
 
 # --------------------------------------------------------------------------- #

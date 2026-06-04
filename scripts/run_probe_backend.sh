@@ -7,12 +7,19 @@
 # Used by the security probe; torn down by the caller via the printed PID.
 set -euo pipefail
 
-REPO=/Users/v/Alice/alice-ai
-PY="$REPO/.venv/bin/python"
+# Derive the repo root from THIS script's location (works locally + in CI; the
+# old hardcoded /Users/v/... path only existed on one dev box).
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Prefer the in-repo venv python; else fall back to the python on PATH (CI
+# installs deps into the runner's hosted Python, not a repo .venv).
+if [ -x "$REPO/.venv/bin/python" ]; then PY="$REPO/.venv/bin/python"; else PY="$(command -v python3 || command -v python)"; fi
 ODY="$REPO/backend/odysseus"
 
-# Small already-resident MLX model for a fast, real on-device generation.
-SNAP=$(find /Users/v/.cache/huggingface/hub/models--mlx-community--Qwen3-0.6B-4bit/snapshots -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
+# Small already-resident MLX model for a fast, real on-device generation. Honor
+# an explicit ALICE_AI_MODEL_DIR override; else find the HF-cached
+# Qwen3-0.6B-4bit snapshot under the standard cache (HF_HOME or ~/.cache/huggingface).
+HF_HUB="${HF_HOME:-$HOME/.cache/huggingface}/hub"
+SNAP="${ALICE_AI_MODEL_DIR:-$(find "$HF_HUB/models--mlx-community--Qwen3-0.6B-4bit/snapshots" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)}"
 
 PORT=$("$PY" - <<'PYEOF'
 import socket

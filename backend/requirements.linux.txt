@@ -58,8 +58,15 @@ huggingface_hub
 # libraries are vendored INTO the AppImage by build_appimage.sh (so no
 # `apt install` on the user's machine — closes the only PyWebView Linux gap,
 # PLAN §2.3). pycairo is PyGObject's drawing dep.
+#
+# PIN PyGObject<3.50: it builds from source against the system gobject-
+# introspection. PyGObject>=3.50 requires the `girepository-2.0` pkg-config
+# (glib>=2.80), which the ubuntu-22.04 (jammy) build runner does NOT ship — it
+# has `libgirepository1.0-dev` (girepository-1.0) only. The <3.50 line builds
+# against that 1.0 dev lib. (When the CI runner moves to a glib>=2.80 base, this
+# pin can be lifted.) pycairo<1.27 matches the <3.50 line's glib expectations.
 pywebview
-PyGObject
+PyGObject<3.50
 pycairo
 
 # --- odysseus runtime deps app.py imports at module load ---
