@@ -50,12 +50,26 @@ The odysseus source bundles its own third-party attributions under its
 `licenses/` and `ACKNOWLEDGMENTS.md`; those are retained in the vendored tree.
 
 ================================================================================
-2. alice-acp  (consumed as a Python dependency — NOT vendored)
+2. alice_acp  (VENDORED under backend/vendor/alice_acp/)
 ================================================================================
-Source:          ../alice-acp  (sibling repo, internal)
-Used as:         editable/path dependency; backend/ imports
-                 `alice_acp.local_inference` (the Track-A inference engine).
-Note:            Consumed, never forked/copied — Track-A improvements flow in.
+Upstream source: V-SK/alice-acp  (sibling repo, internal)
+Vendored commit: 61e1a59b540facec54a683aad58398e4ab4734e5  (branch prl-twpool)
+Used as:         the Track-A inference engine. backend/ imports
+                 `alice_acp.local_inference` (+ api_chat / api_chat_gateway /
+                 mining_device glue). Installed as a normal path package via
+                 backend/vendor/pyproject.toml (deps: SQLAlchemy + cryptography).
+Why vendored:    so this (now public) repo is SELF-CONTAINED and CI can build the
+                 Windows / Linux / macOS packages with NO access to the private
+                 alice-acp repo. The whole pure-Python package is vendored (the
+                 eager package __init__ chains transitively reach a handful of
+                 sibling subpackages); only the inference path is exercised at
+                 runtime. The native inference wheels (mlx / llama-cpp-python /
+                 huggingface_hub) are imported LAZILY and ship via the per-OS
+                 requirements, not this vendored tree.
+Re-vendor:       copy src/alice_acp from the upstream repo at the desired commit
+                 into backend/vendor/alice_acp/ (excluding tests/ + caches) and
+                 update the "Vendored commit" line above.
+License:         internal / first-party (same authorship as this repo).
 
 ================================================================================
 3. Brand assets + fonts  (assets/, populated in a later milestone)

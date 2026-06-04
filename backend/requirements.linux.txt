@@ -20,8 +20,11 @@
 # hash-enforced release build.
 # ---------------------------------------------------------------------------
 
-# Our Track-A inference engine (editable path dep; pinned by git commit in CI).
--e ../../alice-acp
+# Our Track-A inference engine, VENDORED into this repo (backend/vendor/) so the
+# Linux build is self-contained — no external alice-acp checkout (see ../NOTICE
+# §2 for the upstream commit). Installed as a normal (non-editable) path package;
+# its two import-time deps (SQLAlchemy + cryptography) come from its pyproject.
+./vendor
 
 # --- odysseus web stack ---
 fastapi

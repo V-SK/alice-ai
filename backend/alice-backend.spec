@@ -51,10 +51,13 @@ ALICE_AI_PKG = BACKEND / "alice_ai"
 SHELL = REPO / "shell"
 ENTRY = REPO / "packaging" / "macos" / "alice_entry.py"
 
-# alice_acp is an EDITABLE dep (a .pth → <alice-acp>/src). Resolve its source
-# root from the installed package so we can vendor its sources into the bundle.
-import alice_acp  # noqa: E402
-ACP_SRC = Path(alice_acp.__file__).resolve().parents[1]   # .../alice-acp/src
+# alice_acp is VENDORED in-repo under backend/vendor/ (the build is self-contained
+# — no external alice-acp checkout). Bundle the vendored sources directly so the
+# frozen app ships them under <bundle>/_alice_src/ (the entry adds that to
+# sys.path). ``ACP_SRC`` is the dir that CONTAINS the alice_acp package, matching
+# the prior layout (parents[1] of the package) so the _tree() call below is
+# unchanged. We point at the vendored source on disk, NOT at the installed copy.
+ACP_SRC = (BACKEND / "vendor").resolve()                  # .../alice-ai/backend/vendor
 
 
 def _have(mod: str) -> bool:

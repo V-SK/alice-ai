@@ -27,14 +27,15 @@ echo "==> Creating venv at ${VENV} (using ${PY})"
 # build); plain dev iteration uses the loose requirements.txt for speed.
 if [ "${ALICE_LOCKED_INSTALL:-0}" = "1" ]; then
   echo "==> Installing PINNED deps (--require-hashes) from backend/requirements.lock.txt"
-  # The editable first-party alice-acp checkout is not in the (PyPI-only) lock;
-  # install it separately (pin it by git commit in the real build).
+  # The vendored first-party alice_acp (backend/vendor/) is not in the (PyPI-only)
+  # lock; install it separately as a path package. Its import-time deps
+  # (SQLAlchemy + cryptography) ARE in the lock, so --no-deps is safe.
   "${VENV}/bin/python" -m pip install --require-hashes -r "${REPO_ROOT}/backend/requirements.lock.txt"
-  ( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install --no-deps -e ../../alice-acp )
+  ( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install --no-deps ./vendor )
 else
   echo "==> Installing M0 deps from backend/requirements.txt (loose dev env)"
-  # Install from inside backend/ so the editable path dep `-e ../../alice-acp`
-  # (relative to the requirements file) resolves to the sibling alice-acp repo.
+  # Install from inside backend/ so the vendored path package `./vendor`
+  # (relative to the requirements file) resolves to backend/vendor.
   # pip resolves relative requirement paths against CWD, not the -r file's dir.
   ( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install -r requirements.txt )
 fi

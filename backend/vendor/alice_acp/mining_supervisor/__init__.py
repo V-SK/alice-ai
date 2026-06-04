@@ -1,0 +1,29 @@
+"""Local mining supervisor state machine contract."""
+
+from alice_acp.mining_supervisor.state_machine import (
+    SUPERVISOR_AI_DEMAND_CLEARED,
+    SUPERVISOR_AI_RESUME_AFTER_FAILURE,
+    SUPERVISOR_BACKEND_UNSUPPORTED,
+    SUPERVISOR_FAILED_AFTER_CRASH,
+    SUPERVISOR_PAUSED_FOR_AI,
+    SUPERVISOR_RESTARTING_AFTER_CRASH,
+    SUPERVISOR_STARTED,
+    SUPERVISOR_STOPPED,
+    SUPERVISOR_THROTTLED_FOR_AI,
+    MiningSupervisorStateMachine,
+)
+from alice_acp.mining_supervisor.types import SupervisorSnapshot
+
+__all__ = [
+    "SUPERVISOR_AI_DEMAND_CLEARED",
+    "SUPERVISOR_AI_RESUME_AFTER_FAILURE",
+    "SUPERVISOR_BACKEND_UNSUPPORTED",
+    "SUPERVISOR_FAILED_AFTER_CRASH",
+    "SUPERVISOR_PAUSED_FOR_AI",
+    "SUPERVISOR_RESTARTING_AFTER_CRASH",
+    "SUPERVISOR_STARTED",
+    "SUPERVISOR_STOPPED",
+    "SUPERVISOR_THROTTLED_FOR_AI",
+    "MiningSupervisorStateMachine",
+    "SupervisorSnapshot",
+]

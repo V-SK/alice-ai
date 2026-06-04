@@ -20,6 +20,10 @@ ENV/
 # PyInstaller per-spec output (backend/alice-backend.spec → backend/dist|build)
 backend/dist/
 backend/build/
+# setuptools build scratch from `pip install ./vendor` (the vendored alice_acp
+# is committed as SOURCE under backend/vendor/alice_acp/ — never its build dir).
+backend/vendor/build/
+backend/vendor/*.egg-info/
 *.spec.bak
 # PyInstaller scratch
 *.manifest

@@ -1,0 +1,83 @@
+"""Local/default-off miner runtime harness contracts."""
+
+from alice_acp.mining_runtime.command import (
+    build_miner_argv,
+    build_miner_env,
+    build_subprocess_kwargs,
+)
+from alice_acp.mining_runtime.guards import (
+    GUARD_BINARY_OUTSIDE_ALLOWLIST,
+    GUARD_COLLECTION_ADDRESS_MISMATCH,
+    GUARD_ENV_KEY_NOT_ALLOWED,
+    GUARD_ENV_OVERRIDE_REJECTED,
+    GUARD_ENV_SECRET_REJECTED,
+    GUARD_NETWORK_DISABLED,
+    GUARD_REAL_POOL_URL_REJECTED,
+    GUARD_SHELL_REJECTED,
+    validate_command_spec,
+)
+from alice_acp.mining_runtime.log_parser import (
+    LOG_ACCEPTED_SHARE,
+    LOG_HASHRATE_INFO,
+    LOG_MALFORMED_IGNORED,
+    LOG_NONREWARDABLE_SHARE,
+    LOG_TEMPERATURE_INFO,
+    parse_miner_log_line,
+    parse_miner_log_lines,
+)
+from alice_acp.mining_runtime.supervisor import (
+    RUNTIME_FAILED_AFTER_CRASH,
+    RUNTIME_PAUSED_FOR_AI,
+    RUNTIME_RESTARTING_AFTER_CRASH,
+    RUNTIME_RESUMED_AFTER_AI,
+    RUNTIME_STARTED,
+    RUNTIME_STOPPED,
+    RUNTIME_TERMINATE_TIMEOUT_KILLED,
+    RUNTIME_THROTTLED_FOR_AI,
+    MiningProcessSupervisor,
+)
+from alice_acp.mining_runtime.types import (
+    DEFAULT_ENV_ALLOWLIST,
+    DISABLED_POOL_URL,
+    MinerCommandSpec,
+    MinerLogEvent,
+    MiningRuntimeSnapshot,
+    RuntimeGuardResult,
+)
+
+__all__ = [
+    "DEFAULT_ENV_ALLOWLIST",
+    "DISABLED_POOL_URL",
+    "GUARD_BINARY_OUTSIDE_ALLOWLIST",
+    "GUARD_COLLECTION_ADDRESS_MISMATCH",
+    "GUARD_ENV_KEY_NOT_ALLOWED",
+    "GUARD_ENV_OVERRIDE_REJECTED",
+    "GUARD_ENV_SECRET_REJECTED",
+    "GUARD_NETWORK_DISABLED",
+    "GUARD_REAL_POOL_URL_REJECTED",
+    "GUARD_SHELL_REJECTED",
+    "LOG_ACCEPTED_SHARE",
+    "LOG_HASHRATE_INFO",
+    "LOG_MALFORMED_IGNORED",
+    "LOG_NONREWARDABLE_SHARE",
+    "LOG_TEMPERATURE_INFO",
+    "RUNTIME_FAILED_AFTER_CRASH",
+    "RUNTIME_PAUSED_FOR_AI",
+    "RUNTIME_RESTARTING_AFTER_CRASH",
+    "RUNTIME_RESUMED_AFTER_AI",
+    "RUNTIME_STARTED",
+    "RUNTIME_STOPPED",
+    "RUNTIME_TERMINATE_TIMEOUT_KILLED",
+    "RUNTIME_THROTTLED_FOR_AI",
+    "MinerCommandSpec",
+    "MinerLogEvent",
+    "MiningProcessSupervisor",
+    "MiningRuntimeSnapshot",
+    "RuntimeGuardResult",
+    "build_miner_argv",
+    "build_miner_env",
+    "build_subprocess_kwargs",
+    "parse_miner_log_line",
+    "parse_miner_log_lines",
+    "validate_command_spec",
+]

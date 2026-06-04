@@ -127,16 +127,20 @@ if (-not $SkipDeps) {
 
     # Generate the hash-pinned lock ON THIS WINDOWS RUNNER (wheel hashes are
     # per-platform; a macOS lock cannot install here). Committed by CI. Run from
-    # backend/ so the input's editable `-e ../../alice-acp` path dep resolves
-    # against the sibling repo (uv/pip resolve relative paths against CWD).
+    # backend/ so the input's `./vendor` path package resolves (uv/pip resolve
+    # relative paths against CWD).
     Push-Location $Backend
     try {
         & $Py -m uv pip compile --generate-hashes --no-header `
             requirements.win.txt -o requirements.lock.win.txt
         if (-not (Test-Path $LockWin)) { throw "lock not generated: $LockWin" }
-        # Install the editable alice-acp dep first (path dep, not in the hashed
-        # set), then the hash-enforced rest.
-        & $Py -m pip install --quiet -e ..\..\alice-acp
+        # The vendored path package can't be hash-pinned, so uv emits an unhashed
+        # `./vendor` line that --require-hashes rejects. Strip it; install the
+        # vendored package separately --no-deps (its deps are in the hashed set).
+        (Get-Content requirements.lock.win.txt) `
+            | Where-Object { $_.Trim() -ne './vendor' } `
+            | Set-Content requirements.lock.win.txt
+        & $Py -m pip install --quiet --no-deps .\vendor
         & $Py -m pip install --quiet --require-hashes -r requirements.lock.win.txt
     } finally { Pop-Location }
 } else {

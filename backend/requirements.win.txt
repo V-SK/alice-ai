@@ -31,10 +31,12 @@
 # file is the source of truth and the build compiles the lock on the fly.
 # ---------------------------------------------------------------------------
 
-# Our Track-A inference engine (editable path dep — pinned by git commit in CI,
-# not hash-pinned here; it is a first-party source checkout, see the macOS lock
-# header). Relative to backend/ — install from inside backend/.
--e ../../alice-acp
+# Our Track-A inference engine, VENDORED into this repo (backend/vendor/) so the
+# Windows build is self-contained — no external alice-acp checkout (see ../NOTICE
+# §2 for the upstream commit). Installed as a normal (non-editable) path package;
+# its two import-time deps (SQLAlchemy + cryptography) come from its pyproject and
+# are pinned into the generated lock. Relative to backend/ — install from backend/.
+./vendor
 
 # --- odysseus web stack (the forked FastAPI app) ---
 fastapi

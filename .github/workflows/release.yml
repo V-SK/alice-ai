@@ -23,10 +23,6 @@ on:
     tags: ["v*"]            # tag-driven build (no auto release-create)
   workflow_dispatch:
     inputs:
-      alice_acp_ref:
-        description: "alice-acp git ref to build against (branch/tag/SHA)"
-        required: false
-        default: "prl-twpool"
       windows_cuda:
         description: "Windows: build the CUDA llama-cpp-python wheel"
         type: boolean
@@ -36,10 +32,10 @@ on:
         type: boolean
         default: false
 
-# Track-A inference engine repo (consumed read-only as the editable path dep).
+# The Track-A inference engine (alice_acp) is VENDORED in-repo under
+# backend/vendor/ (see NOTICE §2), so this build is SELF-CONTAINED — no external
+# alice-acp checkout / PAT is needed.
 env:
-  ALICE_ACP_REPO: V-SK/alice-acp
-  ALICE_ACP_REF: ${{ github.event.inputs.alice_acp_ref || 'prl-twpool' }}
   PYTHON_VERSION: "3.12"
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
@@ -67,22 +63,13 @@ jobs:
 
     steps:
       # ----------------------------------------------------------------- #
-      # Checkout BOTH repos as siblings: alice-ai/ and alice-acp/ (the
-      # editable `-e ../../alice-acp` path dep resolves to ../alice-acp).
+      # Checkout — just this repo. alice_acp is vendored in-repo
+      # (backend/vendor/), so there is NO sibling alice-acp checkout anymore.
       # ----------------------------------------------------------------- #
       - name: Checkout alice-ai
         uses: actions/checkout@v4
         with:
           path: alice-ai
-
-      - name: Checkout alice-acp (read-only dep)
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.ALICE_ACP_REPO }}
-          ref: ${{ env.ALICE_ACP_REF }}
-          path: alice-acp
-          # A PAT is needed if alice-acp is private; for public it's unused.
-          token: ${{ secrets.ALICE_ACP_TOKEN || github.token }}
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -108,8 +95,9 @@ jobs:
       # Dependencies — the per-OS set. macOS keeps its existing hash-pinned
       # lock; Win/Linux compile + install their lock from the per-OS input
       # (wheel hashes are per-platform — generated ON the runner, committed by
-      # CI for reproducibility). alice-acp is installed editable (no-deps so the
-      # hashed set governs the rest).
+      # CI for reproducibility). The vendored alice_acp (backend/vendor/) is
+      # installed --no-deps (its import-time deps SQLAlchemy + cryptography are in
+      # the hashed set, so --no-deps keeps the hashed set authoritative).
       # ----------------------------------------------------------------- #
       - name: Install deps (macOS — existing hash-pinned lock)
         if: runner.os == 'macOS'
@@ -117,7 +105,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes -r backend/requirements.lock.txt
-          ( cd backend && python -m pip install --no-deps -e ../../alice-acp )
+          ( cd backend && python -m pip install --no-deps ./vendor )
 
       - name: Install deps (Windows — llama-cpp-python swap, compile+hash lock)
         if: runner.os == 'Windows'
@@ -128,11 +116,18 @@ jobs:
           if ($env:WINDOWS_CUDA -eq 'true') {
             $env:PIP_EXTRA_INDEX_URL = 'https://abetlen.github.io/llama-cpp-python/whl/cu124'
           }
-          # cd backend FIRST so the input's `-e ../../alice-acp` path dep resolves.
+          # cd backend FIRST so the input's `./vendor` path package resolves.
           cd backend
           python -m uv pip compile --generate-hashes --no-header `
             requirements.win.txt -o requirements.lock.win.txt
-          python -m pip install -e ..\..\alice-acp
+          # The vendored path package can't be hash-pinned (it's a local dir), so
+          # uv emits it as an unhashed `./vendor` line — which --require-hashes
+          # rejects. Strip that one line; we install the vendored package
+          # separately --no-deps (its deps SQLAlchemy+cryptography ARE hashed).
+          (Get-Content requirements.lock.win.txt) `
+            | Where-Object { $_.Trim() -ne './vendor' } `
+            | Set-Content requirements.lock.win.txt
+          python -m pip install --no-deps .\vendor
           python -m pip install --require-hashes -r requirements.lock.win.txt
         env:
           WINDOWS_CUDA: ${{ github.event.inputs.windows_cuda }}
@@ -142,11 +137,16 @@ jobs:
         working-directory: alice-ai
         run: |
           python -m pip install --upgrade pip uv
-          # cd backend FIRST so the input's `-e ../../alice-acp` path dep resolves.
+          # cd backend FIRST so the input's `./vendor` path package resolves.
           cd backend
           python -m uv pip compile --generate-hashes --no-header \
             requirements.linux.txt -o requirements.lock.linux.txt
-          python -m pip install -e ../../alice-acp
+          # The vendored path package can't be hash-pinned, so uv emits an
+          # unhashed `./vendor` line that --require-hashes rejects. Strip it; we
+          # install the vendored package separately --no-deps (its import-time
+          # deps SQLAlchemy+cryptography ARE hashed in the lock).
+          sed -i '/^\.\/vendor$/d' requirements.lock.linux.txt
+          python -m pip install --no-deps ./vendor
           python -m pip install --require-hashes -r requirements.lock.linux.txt
 
       # ----------------------------------------------------------------- #

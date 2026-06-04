@@ -65,12 +65,15 @@ if [[ "${SKIP_FREEZE:-0}" != "1" ]]; then
   fi
   # Generate the hash-pinned lock ON THIS LINUX RUNNER (manylinux wheel hashes;
   # a macOS lock can't install here). Committed by CI. Run from backend/ so the
-  # input's editable `-e ../../alice-acp` path dep resolves against the sibling
-  # repo (pip/uv resolve relative paths against CWD, not the -r file's dir).
+  # input's `./vendor` path package resolves (pip/uv resolve relative paths
+  # against CWD, not the -r file's dir). The vendored package can't be hashed, so
+  # strip its `./vendor` line from the lock and install it separately --no-deps
+  # (its import-time deps SQLAlchemy+cryptography ARE in the hashed set).
   ( cd "${BACKEND}" \
       && "${PY}" -m uv pip compile --generate-hashes --no-header \
            requirements.linux.txt -o requirements.lock.linux.txt \
-      && "${PY}" -m pip install --quiet -e ../../alice-acp \
+      && sed -i '/^\.\/vendor$/d' requirements.lock.linux.txt \
+      && "${PY}" -m pip install --quiet --no-deps ./vendor \
       && "${PY}" -m pip install --quiet --require-hashes -r requirements.lock.linux.txt )
   [[ -f "${LOCK_LINUX}" ]] || { echo "error: lock not generated: ${LOCK_LINUX}" >&2; exit 1; }
 else

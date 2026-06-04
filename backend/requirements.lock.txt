@@ -14,10 +14,12 @@
 # so the locked versions are exactly what the audited environment ran.
 #
 # NOT INCLUDED (install separately, by design):
-#   * alice-acp — our Track-A inference engine, an editable PATH dep to the
-#     sibling repo (`-e ../../alice-acp` in backend/requirements.txt). It is a
-#     first-party source checkout, not a PyPI artifact, so it is not hash-pinned
-#     here; pin it by git commit in the build instead.
+#   * alice_acp — our Track-A inference engine, now VENDORED in-repo under
+#     backend/vendor/ (see ../NOTICE §2). It is first-party source, not a PyPI
+#     artifact, so it is not hash-pinned here; install it separately as a path
+#     package: `cd backend && pip install --no-deps ./vendor`. Its two import-time
+#     deps (SQLAlchemy + cryptography, and their C-deps cffi/pycparser) ARE pinned
+#     below, so --no-deps is safe.
 #
 # Platform note: mlx/mlx-metal/mlx-lm are Apple-Silicon wheels (the macOS
 # target). Regenerate this lock per packaged platform (e.g. a CUDA/llama.cpp
@@ -27,6 +29,8 @@
 #   .venv/bin/pip freeze --exclude-editable | grep -viE '^alice[-_]acp' > /tmp/f.txt
 #   uv pip compile --generate-hashes --no-annotate --no-header /tmp/f.txt \
 #       -o backend/requirements.lock.txt   # then re-prepend this header
+#   (the `alice[-_]acp` filter drops the vendored path package — it is installed
+#    separately via `pip install --no-deps ./vendor`, not from this lock.)
 
 alembic==1.18.4 \
     --hash=sha256:a5ed4adcf6d8a4cb575f3d759f071b03cd6e5c7618eb796cb52497be25bfe19a \

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# VENDORED copy of the Track-A inference engine (alice_acp), pinned into this
+# repo so the build is SELF-CONTAINED — CI no longer needs to check out the
+# private sibling `alice-acp` repo. See ../../NOTICE (section 2) for the upstream
+# source commit this was vendored from. We keep the whole pure-Python package
+# (only the inference path is used by alice-ai, but the eager package __init__
+# chains transitively reach audit/evidence/transport_front/… which import
+# sqlalchemy + cryptography — see those two hard deps below). The native
+# inference wheels (mlx / llama-cpp-python / huggingface_hub) are imported
+# LAZILY by the runtime adapters and are declared in the per-OS requirements.
+name = "alice-acp-vendored"
+version = "0.0.0+vendored"
+description = "Vendored Alice Track-A inference engine (alice_acp) — see NOTICE for the upstream commit."
+requires-python = ">=3.11"
+# The ONLY non-stdlib modules imported AT IMPORT TIME by alice-ai's alice_acp
+# usage (verified: the backend import closure resolves with exactly these two,
+# without alembic/psycopg which other unused subpackages would want).
+dependencies = [
+    "SQLAlchemy>=2.0.0",
+    "cryptography>=42.0.0",
+]
+
+[tool.setuptools]
+include-package-data = false
+
+# Flat layout: alice_acp/ sits directly under this dir. Auto-discover the package
+# + all its subpackages (47 of them) so nothing is dropped from the install.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["alice_acp", "alice_acp.*"]
