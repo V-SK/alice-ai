@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 #
-# dev_run.sh — run the shell + backend from source (no freeze, no package).
+# dev_run.sh — run the Alice AI spine (shell + backend) from source (M1).
 #
-# PLACEHOLDER (M0). The full implementation lands in M1 (PLAN §5 acceptance):
-# it will boot the forked odysseus FastAPI from source on an ephemeral loopback
-# port, wait on `GET /healthz`, and open the PyWebView shell. For now it points
-# the way and runs the import smoke.
+# The PyWebView shell (shell/alice_shell) claims an ephemeral loopback port,
+# spawns the vendored odysseus FastAPI backend (uvicorn, AUTH off + loopback,
+# inference in-process via alice_provider.py), waits on GET /healthz, and opens
+# the native chat window. No terminal, no visible port (PLAN §2.2).
+#
+# Flags / env:
+#   --no-window           boot backend + wait health + print URL, no GUI window
+#                         (headless verification path; chat then provable via curl)
+#   ALICE_AI_MODEL_DIR    point at an already-resident MLX snapshot dir to prove
+#                         the chat without the multi-GB Alice Lite download
+#                         (the wired default is still Alice Lite).
 #
 set -euo pipefail
 
@@ -18,8 +25,7 @@ if [ ! -x "${VENV}/bin/python" ]; then
   exit 1
 fi
 
-echo "dev_run.sh: M0 placeholder. The shell+backend boot lands in M1 (PLAN §5)."
-echo "Smoke instead:"
-"${VENV}/bin/python" -c "import alice_acp.local_inference; print('  alice_acp.local_inference OK')"
-# M1 will replace the above with, roughly:
-#   exec "${VENV}/bin/python" -m alice_shell      # which spawns the backend
+# The shell lives under shell/; make alice_shell importable.
+export PYTHONPATH="${REPO_ROOT}/shell:${PYTHONPATH:-}"
+
+exec "${VENV}/bin/python" -m alice_shell "$@"

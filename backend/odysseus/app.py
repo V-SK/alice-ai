@@ -720,6 +720,30 @@ app.include_router(setup_contacts_routes())
 from companion import setup_companion_routes
 app.include_router(setup_companion_routes())
 
+# ========= ALICE AI (fork hook — PLAN §2.3 Option B) =========
+# Mount the in-process Alice inference provider (OpenAI-compatible
+# /v1/chat/completions backed by alice_acp.local_inference, running on this
+# device — no network egress during generation) and seed it as odysseus's
+# default chat endpoint. This is the ONE Alice-specific patch to app.py; all
+# Alice-specific logic lives in backend/odysseus/alice_provider.py. odysseus
+# detects the loopback /v1 endpoint as plain "openai" (llm_core fall-through),
+# so the call never leaves the process.
+try:
+    from alice_provider import register_alice_provider
+    register_alice_provider(app)
+    logger.info("Alice in-process inference provider registered")
+except Exception as _alice_exc:  # noqa: BLE001
+    logger.warning("Alice provider registration failed: %s", _alice_exc, exc_info=True)
+
+# Shell health probe (PLAN §2.2): the native shell waits on GET /healthz before
+# showing the window. odysseus's own check is /api/health; expose a top-level
+# /healthz alias the shell can poll without auth (it is added before the auth
+# middleware list only logically — the route is exempt because Simple mode runs
+# AUTH_ENABLED=false; under auth it is whitelisted via /api/health semantics).
+@app.get("/healthz")
+async def alice_healthz() -> Dict[str, str]:
+    return {"status": "ok", "app": "alice-ai"}
+
 # ========= ROUTES (kept in app.py) =========
 
 def _serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:

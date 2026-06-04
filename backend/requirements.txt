@@ -55,30 +55,46 @@ markdown
 python-dateutil
 
 # =============================================================================
-# DEFERRED — declared, NOT installed for the M0 smoke (heavy / platform / opt).
-# Uncomment per-platform in M1 (inference) / M4 (model verify) / packaging.
+# 4. M1 SPINE — inference runtime + native shell + model download. REQUIRED for
+#    the end-to-end local chat (PLAN M1). These are heavier; on macOS arm64 the
+#    inference backend is MLX (Apple-optimised). llama-cpp-python (CPU/CUDA GGUF)
+#    stays DEFERRED below — it is the Windows/Linux backend, dropped here.
 # =============================================================================
-# --- inference runtimes (the big ones; one per platform at freeze time) ---
+# Apple-Silicon inference (this box). Marker-gated so a non-arm64 macOS / other
+# OS install does not try to pull MLX (which is macOS-arm64 only).
+mlx ;     sys_platform == "darwin" and platform_machine == "arm64"
+mlx-lm ;  sys_platform == "darwin" and platform_machine == "arm64"
+# Model weights download (first-run fetch of Alice Lite to ~/.alice/models).
+huggingface_hub
+# The native PyWebView shell (shell/alice_shell). System WebView; no extra GUI dep.
+pywebview
+
+# =============================================================================
+# 5. odysseus runtime deps that app.py imports at module load (so the forked
+#    FastAPI boots from source). These are Advanced-gated features whose hard
+#    imports must resolve; their heavy/networked behaviour is off by default and
+#    they are trimmed from the frozen build (PLAN §2.3). RAG embeddings
+#    (fastembed/chromadb) stay DEFERRED — the app fail-softs to no-vector-memory.
+# =============================================================================
+bcrypt                  # auth lib (imported even though Simple mode = AUTH off)
+pyotp                   # TOTP (auth module import)
+qrcode[pil]             # 2FA QR (auth module import)
+croniter                # scheduled-task cron parsing
+icalendar               # calendar import/export
+caldav                  # CalDAV sync
+youtube-transcript-api  # transcript tool
+mcp                     # Model Context Protocol (Advanced)
+
+# =============================================================================
+# DEFERRED — declared, NOT installed for the spine (heavy / platform / opt).
+# Uncomment per-platform in M4 (model verify) / packaging.
+# =============================================================================
+# --- inference runtimes (the GPU/CPU backend; one per platform at freeze time) ---
 # llama-cpp-python      # CPU + CUDA GGUF backend (Win/Linux); large native wheel
-# mlx                   # Apple-Silicon backend (macOS arm64 only)
-# mlx-lm                # MLX model loading helpers (macOS arm64 only)
-#
-# --- native shell (lives in shell/, listed here for the one-toolchain venv) ---
-# pywebview             # the double-click WebView shell (M1)
 #
 # --- odysseus RAG embeddings (pulls onnxruntime; heavy; fail-soft to BM25) ---
 # chromadb-client       # lightweight HTTP client; PLAN §2.3 -> embedded chromadb
 # fastembed             # local ONNX embeddings; large
-#
-# --- odysseus optional / Advanced-gated (dropped from frozen build, §2.3) ---
-# icalendar             # calendar import/export
-# caldav                # CalDAV sync
-# youtube-transcript-api
-# mcp                   # Model Context Protocol (Advanced)
-# bcrypt                # auth (Simple mode runs AUTH_ENABLED=false)
-# pyotp
-# qrcode[pil]
-# croniter
 
 # =============================================================================
 # HEAVY-DEPENDENCY NOTE (for the later bundling milestones)
