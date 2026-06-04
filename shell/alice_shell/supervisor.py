@@ -148,6 +148,24 @@ class BackendProcess:
     def returncode(self):
         return None if self._proc is None else self._proc.poll()
 
+    def restart(self) -> None:
+        """Re-launch the backend child after a crash (F7 — OOM / native fault).
+
+        Reuses the SAME ephemeral port (the OS frees it when the dead child's
+        socket closes) and the SAME per-launch token + log path, so the already-
+        open WebView keeps talking to the same loopback origin once /healthz is
+        green again. Hard-kills any lingering remnant first (defense vs. a stuck
+        grandchild holding the port). The shell's reconnect overlay covers the
+        gap and auto-clears when health returns.
+        """
+        # Make sure nothing from the previous generation lingers on the port.
+        try:
+            self.stop(term_grace_s=2.0)
+        except Exception:  # noqa: BLE001
+            pass
+        self._proc = None
+        self.start()
+
     def stop(self, *, term_grace_s: float = 5.0) -> None:
         """Graceful stop, then a whole-tree hard kill if it lingers (R5/F9).
 

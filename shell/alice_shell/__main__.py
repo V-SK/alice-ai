@@ -117,6 +117,27 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ok = health.wait_for_health(port, timeout_s=120.0, is_alive=backend.is_alive)
         if not ok:
+            # F6 / R4 — if the backend died early because the claimed port got
+            # taken in the close→bind race (or anything else transient), re-claim
+            # a FRESH ephemeral port and retry the boot a couple of times before
+            # giving up. (Ephemeral binds make a true conflict near-impossible,
+            # but this closes the documented race + any odd environment.)
+            from alice_shell.port import is_port_free
+
+            for boot_try in range(1, 3):
+                if backend.is_alive():
+                    break  # process alive but slow → don't churn the port
+                rc = backend.returncode()
+                _log(f"backend not healthy (rc={rc}); re-claiming a port + retry "
+                     f"{boot_try}/2 (port {port} free now: {is_port_free(port)})")
+                port = claim_ephemeral_port()
+                backend = BackendProcess(port, log_path=log_path,
+                                         local_token=backend.local_token)
+                backend.start()
+                ok = health.wait_for_health(port, timeout_s=60.0, is_alive=backend.is_alive)
+                if ok:
+                    break
+        if not ok:
             rc = backend.returncode()
             _log(
                 f"backend did NOT become healthy (alive={backend.is_alive()}, "
@@ -141,15 +162,48 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         # Open the native chat window (blocks until closed). A daemon watchdog
-        # destroys the window when (a) a quit signal arrives or (b) the backend
-        # dies, so neither leaves a zombie window or a stale backend.
+        # (a) closes the window on a quit signal, and (b) on an UNEXPECTED backend
+        # exit (F7 — OOM / native-lib fault mid-chat) tries to RESTART the engine
+        # a bounded number of times rather than killing the window. The page's
+        # reconnect overlay (alice-failure.js) covers the gap and auto-clears when
+        # /healthz returns; only if every restart fails do we close the window
+        # (the page already shows the honest "close and reopen Alice" card).
         from alice_shell.window import close_all_windows, open_chat_window
 
+        _MAX_RESTARTS = 3
+        _restart_window_s = 120.0  # reset the budget after a long healthy run
+
         def _watchdog() -> None:
+            restarts = 0
+            last_restart = 0.0
             while not _stopped.is_set():
-                if _want_quit.is_set() or not backend.is_alive():
-                    if not backend.is_alive():
-                        _log("backend exited unexpectedly — closing window.")
+                if _want_quit.is_set():
+                    close_all_windows()
+                    return
+                if not backend.is_alive():
+                    now = time.monotonic()
+                    if now - last_restart > _restart_window_s:
+                        restarts = 0  # healthy for a while → fresh budget
+                    rc = backend.returncode()
+                    if restarts < _MAX_RESTARTS:
+                        restarts += 1
+                        last_restart = now
+                        _log(f"backend exited (rc={rc}); restart {restarts}/{_MAX_RESTARTS}…")
+                        try:
+                            backend.restart()
+                        except Exception as exc:  # noqa: BLE001
+                            _log(f"backend restart failed: {exc}")
+                        # Wait for health before resuming the watch; the page is
+                        # showing the reconnect overlay meanwhile.
+                        ok = health.wait_for_health(
+                            port, timeout_s=40.0, is_alive=backend.is_alive
+                        )
+                        if ok:
+                            _log("backend healthy again after restart.")
+                        else:
+                            _log("backend did not recover after restart.")
+                        continue
+                    _log(f"backend exited (rc={rc}) and exceeded restart budget — closing window.")
                     close_all_windows()
                     return
                 time.sleep(0.4)

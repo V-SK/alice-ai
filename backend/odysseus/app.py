@@ -84,12 +84,30 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Compute the Simple-mode boundary once, early, for the CORS decision below
+# (the full alice_security import + middleware wiring is further down). This is
+# a stdlib-only env read, safe to evaluate here.
+try:
+    from core.alice_security import simple_boundary_active as _sba_for_cors
+    _SIMPLE_BOUNDARY_FOR_CORS = _sba_for_cors()
+except Exception:  # noqa: BLE001 — never let this break app construction
+    _SIMPLE_BOUNDARY_FOR_CORS = os.getenv("ALICE_SIMPLE_MODE", "1").strip().lower() not in ("0", "false", "no", "off", "")
+
 # ========= CORS =========
+# MED-2 (deep-security-audit): in Simple mode the AliceLocalTokenMiddleware
+# already hard-rejects every cross-origin / foreign-Origin request on the
+# /api,/v1,/alice surface, and the real UI is same-origin (needs no CORS at
+# all). ``allow_credentials=True`` with loopback origins is a footgun if the
+# origin list is ever widened, and Simple mode uses NO cookies for auth (only
+# the per-launch local-token header/cookie, which is same-origin-only). So drop
+# credentialed CORS under the Simple boundary; keep odysseus's original
+# behaviour for a genuine Advanced build.
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
+_cors_allow_credentials = not _SIMPLE_BOUNDARY_FOR_CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=[
         "Accept",

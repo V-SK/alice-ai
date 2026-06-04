@@ -390,6 +390,43 @@ explicit `ALICE_SIMPLE_MODE=1` (set by the supervisor) that the fork honors:
 
 ---
 
+## M8 resolution (2026-06-04 · hardening pass) — verdict: **GO**
+
+The MUST-DISABLE gate (1–8) landed in `407f394` and is locked by tests + the live
+probe. The **live `scripts/security_probe.py` = 28/28** against an ephemeral
+instance, and the offline gate `backend/tests/test_invariants.py::SecurityInvariant`
+fails CI on a regression. CRIT/HIGH summary:
+
+| ID | Item | Status |
+|---|---|---|
+| CRIT-1 | Agent RCE via open tool gate | **FIXED** — `core/alice_security.py` hard-blocks `python`/`bash`/`read_file`/`write_file`/`api_call`/`app_api`/`mcp__*` at dispatch in Simple mode, independent of the owner gate; `test_simple_mode_security.py` + `SecurityInvariant`. |
+| CRIT-2 | No CSRF/Origin/Host check | **FIXED** — `AliceLocalTokenMiddleware` (per-launch token, cookie+header, `secrets.compare_digest`) + Origin/Sec-Fetch guard + `TrustedHostMiddleware` (loopback hosts). Probe: bad Host → 400, cross-origin/no-token → 403. |
+| HIGH-1 | Privileged routers mounted | **FIXED** — `_ALICE_MOUNT_PRIVILEGED = not simple_boundary_active()` gates shell/cookbook/hwfit/MCP/codex/claude/vault. Probe: shell/cookbook/mcp/vault → 404. |
+| HIGH-2 | CSS-only Simple/Advanced | **FIXED** — Advanced is server-side (`/alice/mode`), requires `ALICE_ADVANCED=1` **AND** an admin account; `localStorage`/`?adv=1` only reveals chrome the server still refuses. |
+| HIGH-3 | Unpinned deps / no lockfile | **FIXED** — `requirements.lock.txt` (macOS, hash-pinned, `--require-hashes`); Win/Linux locks compiled + hash-installed in CI. |
+| HIGH-4 | Un-SRI'd CDN scripts | **FIXED** — KaTeX/Mermaid vendored to `static/lib`; CSP `script-src 'self'`-only; jsdelivr removed (privacy P1). |
+
+### MED/LOW sweep (this pass)
+
+| ID | Item | Disposition |
+|---|---|---|
+| **MED-1** | LOCALHOST_BYPASS over-trusts loopback peer | **Defended in depth, kept.** The bypass is moot in Simple mode (auth off), and the `AliceLocalTokenMiddleware` + TrustedHost now gate every mutating route on a per-launch secret + loopback Host regardless — a loopback peer without the token is rejected. No further change needed for a loopback, no-auth build. |
+| **MED-2** | CORS `allow_credentials=True` + loopback | **FIXED (cheap sweep).** `app.py` now sets `allow_credentials=False` under the Simple boundary (Simple mode uses no cookies for auth — only the same-origin local-token; the UI is same-origin and needs no CORS). Removes the widen-the-origins footgun. Original behaviour kept for a genuine Advanced build. Probe still 28/28. |
+| **MED-3** | MCP autostart + builtin servers | **FIXED** — the MCP routers + startup connect are behind `_ALICE_MOUNT_PRIVILEGED`; `mcp__*` is in the Simple hard-block set. (Not mounted in Simple → probe `/api/mcp/servers` → 404.) |
+| **MED-4** | web_fetch/research SSRF (residual) | **Deferred — gated off, low risk.** The agent web tools are unreachable in Simple mode (tools blocked at dispatch + chat-mode forced + routers context). The residual depends on `url_safety`, which is only exercised if a future Advanced build ships web tools enabled; re-audit `url_safety` then (privacy-audit §2 already lists these as conditional/off-by-default). No code change this pass. |
+| **MED-5** | Model verify existence-only fallback | **Deferred — bounded + documented.** Only taken when BOTH the vendored manifest and HF OID metadata are unreachable (offline first-download); the revision is still pinned, weights aren't pickle, and the load fails loudly if corrupt. The durable fix (extend `checksums.json` to the GGUF repos, PLAN §6-Q7) is a catalog change left to V; the existence-only path stays the explicit last resort. |
+| **LOW-1** | `_COOKBOOK_BASE` hardcoded :7000 | **Resolved by HIGH-1.** The cookbook + `app_api`/`api_call` surface is not mounted in Simple mode and those tools are hard-blocked at dispatch, so the stale `:7000` loopback (which already missed Alice's ephemeral port) is unreachable. No change needed. |
+| **LOW-2** | Hardcoded INTERNAL_TOOL_TOKEN fallback | **Deferred — unreachable in Simple.** The token-grants-admin loopback (`app_api`) is blocked at dispatch + its routes unmounted. Odysseus-internal; out of scope for the Simple build. |
+| **LOW-3** | tmpfile shell wrappers world-readable | **Deferred — unreachable in Simple.** Produced only by the shell/automation action surface, which is unmounted + dispatch-blocked. Re-audit if Advanced ships these. |
+| **LOW-4** | No telemetry confirmation | **CONFIRMED (privacy-audit §2).** A word-boundary scan found no analytics/crash-reporter/update-pinger; the privacy gate `test_only_egress_in_our_code_is_hf_download` asserts our code's only egress is the HF download. |
+
+**Deferred items are all either gated-off-and-unreachable in the Simple build
+(MED-4, LOW-2, LOW-3) or bounded-and-documented (MED-5)** — none is reachable on
+the shipped 小白 (Simple-mode) path. The cheap sweep (MED-2) is fixed. Verdict for
+the Simple-mode build: **GO**, with the invariants locked as CI gates.
+
+---
+
 ## Appendix — live probe evidence (isolated ephemeral port 60733, torn down)
 
 ```

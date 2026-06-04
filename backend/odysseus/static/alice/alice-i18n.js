@@ -159,6 +159,58 @@
     'err.copy':        { en: 'Copy details', zh: '复制详情' },
     'download.retry':  { en: 'Retry', zh: '重试' },
     'download.paused': { en: 'Paused — check your internet.', zh: '已暂停，请检查网络连接。' },
+
+    // ---- failure-mode matrix (M8 · F1–F11, design 01 §failure-modes) --------
+    // Every state is graceful + recoverable: clear title, plain-language body,
+    // and a single obvious action. NEVER a stack trace / port / jargon.
+    'fail.resume':     { en: 'Resume download', zh: '继续下载' },
+    'fail.back':       { en: 'Back', zh: '返回' },
+    'fail.choose':     { en: 'Choose a smaller Alice', zh: '换一个更小的 Alice' },
+    'fail.tryLite':    { en: 'Use Alice Lite instead', zh: '改用 Alice Lite' },
+    // F1 — download interrupted / network dropped mid-download
+    'fail.net.h':      { en: 'Download paused', zh: '下载已暂停' },
+    'fail.net.b':      { en: 'Your internet connection dropped. Alice kept what it already downloaded — reconnect and resume where it left off.',
+                         zh: '网络连接中断了。Alice 已保留下载好的部分——恢复网络后可从中断处继续。' },
+    // F2 — corrupt download / SHA-256 mismatch (auto re-fetch, then this)
+    'fail.sha.h':      { en: 'Re-downloading a damaged file', zh: '正在重新下载损坏的文件' },
+    'fail.sha.b':      { en: 'Part of the download didn’t arrive intact, so Alice is fetching it again. This is automatic — no action needed.',
+                         zh: '下载的部分文件不完整，Alice 正在自动重新获取。无需操作。' },
+    'fail.sha.fail.h': { en: 'Couldn’t verify the download', zh: '无法校验下载内容' },
+    'fail.sha.fail.b': { en: 'The model files didn’t pass Alice’s safety check even after retrying. Please try again — it’s usually a temporary network issue.',
+                         zh: '即便重试后，模型文件仍未通过 Alice 的安全校验。请再试一次——通常是临时的网络问题。' },
+    // F3 — model too big for device (the VRAM/RAM gate)
+    'fail.big.h':      { en: 'This model needs a bigger computer', zh: '该模型需要更大内存的电脑' },
+    'fail.big.b':      { en: 'This Alice needs about <b><span class="mono">{need}</span></b> of memory, and your computer has <span class="mono">{have}</span>. Alice Lite runs great on your machine.',
+                         zh: '这个 Alice 大约需要 <b><span class="mono">{need}</span></b> 内存，而你的电脑有 <span class="mono">{have}</span>。Alice Lite 在你的电脑上运行得很好。' },
+    // F4 — model load failure (downloaded + verified, but failed to load)
+    'fail.load.h':     { en: 'Couldn’t start this model', zh: '无法启动该模型' },
+    'fail.load.b':     { en: 'The model downloaded fine but didn’t load — your computer may be low on free memory. Close a few apps and try again, or switch to Alice Lite.',
+                         zh: '模型已下载，但未能加载——你的电脑可用内存可能不足。关闭一些应用后再试，或切换到 Alice Lite。' },
+    // F5 — disk full during download
+    'fail.disk.h':     { en: 'Not enough free space', zh: '磁盘空间不足' },
+    'fail.disk.b':     { en: 'Alice needs about <b><span class="mono">{need}</span></b> of free disk space to set up this model. Free up some space, then try again.',
+                         zh: 'Alice 需要约 <b><span class="mono">{need}</span></b> 的可用磁盘空间来安装该模型。请清理一些空间后再试。' },
+    'fail.disk.b.plain': { en: 'Alice ran out of disk space while setting up. Free up some space, then try again.',
+                          zh: 'Alice 在安装时磁盘空间用尽。请清理一些空间后再试。' },
+    // F6/F7 — backend not up yet / crashed mid-chat → reconnecting overlay
+    'fail.recon.h':    { en: 'Reconnecting to Alice…', zh: '正在重新连接 Alice…' },
+    'fail.recon.b':    { en: 'Alice’s engine restarted. Your conversation is safe — this takes just a moment.',
+                         zh: 'Alice 的引擎刚刚重启。你的对话已保存——稍候片刻即可。' },
+    'fail.recon.fail.h': { en: 'Alice needs a restart', zh: 'Alice 需要重新启动' },
+    'fail.recon.fail.b': { en: 'Alice’s engine couldn’t restart on its own. Please close and reopen Alice — your chats are saved on this device.',
+                         zh: 'Alice 的引擎未能自行重启。请关闭并重新打开 Alice——你的聊天记录已保存在本机。' },
+    // F8 — generic download failure (unknown reason)
+    'fail.dl.h':       { en: 'Download didn’t finish', zh: '下载未完成' },
+    'fail.dl.b':       { en: 'Something interrupted the download. Your progress is saved — try again when you’re ready.',
+                         zh: '下载被中断了。进度已保存——准备好后可再试。' },
+
+    // ---- Pyodide / in-browser code runner (privacy-P3, design 01) -----------
+    // The Python code-runner needs a ~10 MB runtime that is NOT bundled; the
+    // app's 'self'-only CSP blocks the CDN by design (fail-closed, no silent
+    // egress). Honest copy: this one feature needs the Advanced/online path.
+    'run.py.loading':  { en: 'Starting the Python runner…', zh: '正在启动 Python 运行环境…' },
+    'run.py.blocked':  { en: 'Running Python here needs Alice’s Advanced (online) mode — the code runner downloads a one-time runtime, so it stays off in private offline mode. JavaScript and HTML run without it.',
+                         zh: '在此运行 Python 需要 Alice 的高级（联网）模式——代码运行器需一次性下载运行环境，故在私密离线模式下保持关闭。JavaScript 与 HTML 无需联网即可运行。' },
   };
 
   function detectDefault() {

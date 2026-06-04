@@ -227,5 +227,52 @@ saved").
 
 ---
 
+## M8 resolution (2026-06-04 · hardening pass)
+
+All privacy MUST-FIX items are now closed, and the no-network/no-credit invariant
+is locked as a CI gate (`backend/tests/test_invariants.py::PrivacyInvariant`).
+
+| Pri | Item | Status |
+|---|---|---|
+| **P1** | KaTeX vendored to `static/lib/katex`; jsdelivr `<link>`/`<script>` dropped. | **DONE** (407f394) — verified: `index.html` references `/static/lib/katex`, 0 jsdelivr; gate `test_no_cdn_libs_in_served_html`. |
+| **P1** | Mermaid vendored to `static/lib/mermaid.min.js`; jsdelivr dropped. | **DONE** — same gate. |
+| **P1** | CSP tightened to `script-src 'self'` (+nonce), no jsdelivr in any directive. | **DONE** — `core/middleware.py`; gate `test_csp_is_self_only`; live probe confirms `script-src 'self'`. |
+| **P2** | "no logging" wording → "no telemetry, no cloud — chats saved only on this device" (EN+ZH). | **DONE** — `alice-i18n.js` `chat.note`; gate `test_no_logging_overclaim_fixed`. |
+| **P2** | "no network" footnoted ("while chatting" / except the one-time download). | **DONE** — the `chat.note` copy is now scoped to telemetry/cloud, not an absolute "no network"; the one-time download is described in `download.foot`/`download.sub` ("downloads once, then offline"). |
+| **P3** | **Pyodide CDN load (in-browser Python code-runner).** | **DECIDED — Advanced/online-gated, fail-closed (see below).** |
+
+### P3 decision: Pyodide stays Advanced/online-gated, fail-closed, with an honest note
+
+**The runtime is NOT vendored.** Pyodide is ~10 MB of WASM + an on-demand package
+index, and the in-browser Python code-runner is a power-user (Advanced) feature,
+not part of the default 小白 chat. Bundling it would inflate every installer (all
+3 OSes) for a feature most 小白 never touch, and the package index is fetched
+on-demand at runtime regardless. So:
+
+1. **The app CSP is `'self'`-only**, which **blocks the `cdn.jsdelivr.net/pyodide`
+   load by design** — there is **no silent egress** on first code-run. This is the
+   intended offline-first posture: the runner **fails closed**, it does not phone a
+   CDN. (Verified: the CSP has no jsdelivr in any directive; the script injection
+   is blocked → `script.onerror`.)
+2. **The failure is now HONEST, not a stack trace.** `static/js/codeRunner.js`
+   shows a clear, jargon-free i18n note (`run.py.blocked`): *"Running Python here
+   needs Alice's Advanced (online) mode — the code runner downloads a one-time
+   runtime, so it stays off in private offline mode. JavaScript and HTML run
+   without it."* (EN+ZH). No raw "Failed to load Pyodide".
+3. **JavaScript + HTML code-running have no external dependency** and work offline
+   in Simple mode unchanged.
+4. **If/when Advanced ships an online code-runner**, enabling it is a deliberate
+   server-side decision (the Advanced boundary already requires an admin account);
+   a future Advanced build would widen the CSP `script-src`/`connect-src` for the
+   pyodide origin *only in that build*, leaving Simple mode fail-closed. Vendoring
+   Pyodide locally remains a future option if an offline code-runner is desired —
+   the only change would be dropping `pyodide.js` + the wheel index under
+   `static/lib/` and rewriting the two `src`/`indexURL` to `/static/lib/...`.
+
+**Net:** P3 is no longer a privacy leak (fail-closed, CSP-blocked) and no longer a
+rough edge (honest in-UI explanation). Documented as the shipped choice.
+
+---
+
 *Audited read-only. The owner's running instance (pid 13828 / port 50026) was not
 disturbed; the headless test ran on ephemeral port 50191 and was torn down.*

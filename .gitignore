@@ -53,3 +53,7 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# --- Security/dev probe runtime artifacts (scripts/run_probe_backend.sh) ---
+scripts/.probe-meta.txt
+scripts/.probe-backend.log

@@ -244,6 +244,7 @@
   window.AliceShell = window.AliceShell || {};
   window.AliceShell.setAdvanced = setAdvanced;
   window.AliceShell.advOn = advOn;
+  window.AliceShell.markSVG = markSVG;   // reused by the reconnect overlay (M8)
   // exported so a host (or the language toggle) can re-localize live
 
   /* =========================================================================
@@ -267,6 +268,8 @@
     });
     // Earn surface (entry card / sidebar / open panel) re-localizes itself.
     if (window.AliceEarn && window.AliceEarn.relocalize) window.AliceEarn.relocalize();
+    // Failure overlays (reconnect) re-localize live too.
+    if (window.AliceFailure && window.AliceFailure.relocalize) window.AliceFailure.relocalize();
   }
   function injectLangToggle() {
     // a small EN/中 toggle near the chat top-bar (titlebar is native in the shell)
@@ -427,8 +430,24 @@
           return;
         }
         if (r.body.blocked) {
-          // REFUSE: too big for the device — keep the picker open, explain.
-          window.alert(T('gate.refuse'));
+          // REFUSE (F3): too big for the device. Show the honest "this model
+          // needs X GB; Alice Lite runs great" card with a one-tap fallback,
+          // instead of a bare native alert.
+          closePicker();
+          if (window.AliceFailure) {
+            // Reuse the download-error renderer's "big" path inside a first-run
+            // card so the 小白 gets the honest "needs X GB → use Alice Lite" UI.
+            openFirstRun(); FR_STATE.step = 1; renderFirstRun();
+            window.AliceFailure.renderDownloadError(
+              { phase: 'error', reason: 'model_gate_refused' },
+              {
+                have: _deviceMemHint(),
+                onUseLite: _fallbackToLite,
+                onChoose: function () { closeFirstRun(); openPicker(document.getElementById('model-picker-btn')); },
+              });
+          } else {
+            window.alert(T('gate.refuse'));
+          }
           return;
         }
       }
@@ -582,6 +601,7 @@
         var rec = data.recommended || {};
         FR_STATE.recId = rec.id || 'lite';
         FR_STATE.recSize = rec.download_size_human || '';
+        if (dev.memory_gb != null) FR_STATE.deviceMemHint = dev.memory_gb + ' GB';
         var v = document.querySelector('#a-firstrun .fr-detect .v');
         if (v && dev.label) {
           v.innerHTML = dev.label + ' <small>· ' + (dev.memory_gb || '?') + ' GB · ' + (dev.accelerator || '') + '</small>';
@@ -597,6 +617,9 @@
 
   // Start the REAL download (verified, resumable) of the recommended tier; fall
   // back to the demo ring only when the /alice Model Manager API is absent.
+  // On any failure, hand off to the M8 failure-mode renderer (F1/F2/F3/F5/F8)
+  // with real recovery callbacks (resume/retry restarts the same flow; "Use
+  // Alice Lite" downloads + loads the smallest safe tier instead).
   function startDownload() {
     if (!window.AliceModels) { startDemoProgress(); return; }
     window.AliceModels.available().then(function (up) {
@@ -604,12 +627,34 @@
       var id = FR_STATE.recId || 'lite';
       window.AliceModels.ensure(id, _onDownloadEvent).then(function (ev) {
         if (ev && ev.phase === 'error') { _showDownloadError(ev); return; }
-        // verified → load it, then go to Ready.
-        window.AliceModels.load(id, { confirm: true }).then(function () {
+        // verified → load it, then go to Ready. A load failure (F4) is its own
+        // recoverable state (free memory / Alice Lite), distinct from download.
+        window.AliceModels.load(id, { confirm: true }).then(function (r) {
+          if (r && r.ok === false) { _showLoadError(id, r); return; }
           FR_STATE.step = 2; renderFirstRun(); _refreshPickerLabel();
-        });
-      }).catch(function () { startDemoProgress(); });
+        }).catch(function () { _showLoadError(id, null); });
+      }).catch(function () {
+        // The SSE channel itself failed (backend bounce mid-download). Treat as
+        // a resumable network interruption, and nudge the health heartbeat.
+        if (window.AliceFailure) {
+          if (window.AliceFailure.checkNow) window.AliceFailure.checkNow();
+          _showDownloadError({ phase: 'error', reason: 'model_download_failed' });
+        } else { startDemoProgress(); }
+      });
     });
+  }
+
+  // Download + load Alice Lite (the one-tap fallback for "too big" / load fail).
+  function _fallbackToLite() {
+    FR_STATE.recId = 'lite';
+    FR_STATE.step = 1; renderFirstRun(); _hydrateFirstRunDevice();
+    startDownload();
+  }
+
+  // The device's usable memory as a "NN GB" string (for the "too big" card's
+  // honest "your computer has X" line). Cached from the last device probe.
+  function _deviceMemHint() {
+    return FR_STATE.deviceMemHint || null;
   }
 
   function _onDownloadEvent(ev) {
@@ -635,11 +680,41 @@
     }
   }
 
+  // Map the backend's REASON_* (on the ensure SSE 'error' event) to a clear,
+  // recoverable F-state (M8). Falls back to the inline paused-line if the
+  // failure module isn't present (e.g. a stripped standalone mockup).
   function _showDownloadError(ev) {
+    if (window.AliceFailure && document.querySelector('#a-firstrun .fr-card')) {
+      var id = FR_STATE.recId || 'lite';
+      window.AliceFailure.renderDownloadError(ev, {
+        onResume: function () { FR_STATE.step = 1; renderFirstRun(); startDownload(); },
+        onRetry:  function () { FR_STATE.step = 1; renderFirstRun(); startDownload(); },
+        onUseLite: _fallbackToLite,
+        onChoose: function () { closeFirstRun(); openPicker(document.getElementById('model-picker-btn')); },
+      });
+      return;
+    }
     var h = document.querySelector('#a-firstrun .fr-h');
     var sub = document.querySelector('#a-firstrun .fr-sub');
     if (h) h.textContent = T('download.paused');
     if (sub) sub.textContent = (ev && ev.message) ? ev.message : T('err.generic');
+  }
+
+  // F4 — model load failure (downloaded + verified, engine couldn't bring it up).
+  function _showLoadError(id, r) {
+    if (window.AliceFailure) {
+      window.AliceFailure.renderLoadError({
+        onRetry: function () {
+          window.AliceModels.load(id, { confirm: true }).then(function (rr) {
+            if (rr && rr.ok === false) { _showLoadError(id, rr); return; }
+            FR_STATE.step = 2; renderFirstRun(); _refreshPickerLabel();
+          }).catch(function () { _showLoadError(id, null); });
+        },
+        onUseLite: _fallbackToLite,
+      });
+      return;
+    }
+    _showDownloadError({ phase: 'error', reason: 'ensure_failed', message: r && r.body && r.body.error });
   }
 
   // Picker → download a not-yet-installed tier (reuses the first-run ring), then

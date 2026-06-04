@@ -300,3 +300,61 @@
 
 /* a small-window guard: keep the entry card from pushing chips off-screen */
 @media (max-height:640px){ .a-earn-entry{margin-top:14px;} }
+
+/* ============================================================================
+   FAILURE-MODE UX (M8 · F1–F11). Graceful, recoverable, on-brand. The error
+   states reuse the first-run card; a static amber-tinted ring (no breathing)
+   signals "stopped, but fine — here's what to do". NO red panic, NO jargon.
+   ============================================================================ */
+/* the calm error ring — replaces the live conic gauge on a failure */
+.dl-wrap.a-fail .dl-ring.a-fail-ring{
+  background:conic-gradient(from -90deg, var(--a-warn) 0deg, var(--a-warn) 360deg, rgba(63,63,70,.001) 0);
+  filter:drop-shadow(0 0 7px rgba(245,158,11,.4));opacity:.55;animation:none;}
+.dl-wrap.a-fail .dl-core{box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 -14px 30px rgba(0,0,0,.55) inset,0 0 0 1px rgba(245,158,11,.16) inset;}
+.a-fail-glyph{display:grid;place-items:center;color:var(--a-warn);filter:drop-shadow(0 0 10px rgba(245,158,11,.45));}
+.a-fail-glyph svg{width:40px;height:40px;stroke:var(--a-warn);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+
+.a-fail-actions{margin-top:20px;display:flex;flex-direction:column;gap:10px;}
+.a-fail-actions .a-fail-btn{width:100%;}
+.a-fail-copy{margin-top:13px;font-size:11px;}
+
+/* mid-session failure banner (no first-run card on screen — e.g. switch fail) */
+.a-fail-banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:80050;
+  width:min(560px,calc(100vw - 32px));display:flex;align-items:flex-start;gap:13px;
+  background:linear-gradient(180deg,#1c1a16,#161412);border:1px solid rgba(245,158,11,.3);
+  border-left:2px solid var(--a-warn);border-radius:var(--a-radius);padding:14px 16px;
+  box-shadow:0 24px 60px -18px rgba(0,0,0,.8);}
+.a-fail-banner-ic{flex:none;color:var(--a-warn);}
+.a-fail-banner-ic svg{width:22px;height:22px;stroke:var(--a-warn);stroke-width:2;fill:none;}
+.a-fail-banner-txt{min-width:0;flex:1;}
+.a-fail-banner-txt .h{font-size:13.5px;font-weight:650;color:var(--a-text);}
+.a-fail-banner-txt .b{font-size:12px;color:var(--a-text-2);margin-top:4px;line-height:1.5;}
+.a-fail-banner-act{display:flex;flex-direction:column;gap:8px;flex:none;}
+.a-fail-banner-act .a-fail-btn{white-space:nowrap;padding:8px 13px;font-size:12.5px;margin-top:0;}
+.a-fail-banner-x{flex:none;background:transparent;border:0;color:var(--a-text-4);font-size:20px;line-height:1;cursor:pointer;padding:0 2px;}
+.a-fail-banner-x:hover{color:var(--a-text-2);}
+
+/* ============================================================================
+   RECONNECT overlay (F6 backend-not-up-yet / F7 crash-mid-chat). Full-cover,
+   calm, auto-clears when /healthz returns. The shell restarts the engine; this
+   reads as a brief pause, not a dead window.
+   ============================================================================ */
+.a-reconnect{position:fixed;inset:0;z-index:90000;display:grid;place-items:center;
+  background:radial-gradient(120% 120% at 50% 30%,rgba(10,10,11,.92),rgba(5,5,5,.97));
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}
+.a-reconnect-card{text-align:center;max-width:340px;padding:8px 22px;}
+.a-reconnect-mark{width:48px;height:48px;margin:0 auto 6px;line-height:0;
+  filter:drop-shadow(0 0 14px rgba(249,115,22,.5));animation:aMarkBreathe 3.4s ease-in-out infinite;}
+.a-reconnect-mark svg{width:48px;height:48px;}
+.a-reconnect-mark svg path{fill:var(--a-brand-400);}
+.a-reconnect-spin{width:26px;height:26px;margin:14px auto 16px;border-radius:50%;
+  border:2.5px solid rgba(249,115,22,.18);border-top-color:var(--a-brand-400);animation:aSpin .9s linear infinite;}
+@keyframes aSpin{to{transform:rotate(360deg)}}
+.a-reconnect-h{font-size:16px;font-weight:700;letter-spacing:-.01em;color:var(--a-text);}
+.a-reconnect-b{font-size:12.5px;color:var(--a-text-3);margin-top:8px;line-height:1.6;}
+
+/* reduced-motion: kill the spinner + breathing on the failure/reconnect UI */
+@media (prefers-reduced-motion: reduce){
+  .a-reconnect-mark,.a-reconnect-spin,.dl-wrap.a-fail .dl-aura{animation:none !important;}
+  .a-reconnect-spin{border-top-color:var(--a-brand-400);opacity:.8;}
+}

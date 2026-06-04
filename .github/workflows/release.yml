@@ -169,7 +169,7 @@ jobs:
         working-directory: alice-ai
         run: python -c "import sys; sys.path.insert(0,'shell'); from alice_shell.win_job import self_check; raise SystemExit(self_check())"
 
-      - name: Unit tests (with writable data dir for the odysseus DB)
+      - name: Unit tests + invariant gates (with writable data dir for the DB)
         working-directory: alice-ai
         shell: bash
         run: |
@@ -177,7 +177,42 @@ jobs:
           export ALICE_AI_DATA_DIR="${RUNNER_TEMP}/alice-citest"
           mkdir -p "${ALICE_AI_DATA_DIR}"
           export DATABASE_URL="sqlite:///${ALICE_AI_DATA_DIR}/app.db"
-          cd backend && PYTHONPATH="$(pwd)" python -m pytest tests/ -q
+          # tests/ includes the M8 cross-cutting invariant gates
+          # (tests/test_invariants.py): privacy (no-network), honesty
+          # (paid_acu=0 / Alice-only names / 待发放), security (Simple-mode
+          # boundary). A regression in any of those FAILS this job.
+          ( cd backend && PYTHONPATH="$(pwd)" python -m pytest tests/ -q )
+          # Shell failure-mode gates (M8): port-conflict re-claim (F6) + bounded
+          # backend restart on crash (F7). Cross-OS; the Windows Job-Object path
+          # is self-checked in its own step above.
+          PYTHONPATH=shell python -m pytest shell/tests/ -q
+
+      # ----------------------------------------------------------------- #
+      # LIVE security probe (macOS only) — the deep-security-audit's 28 exploit
+      # checks against a running ephemeral instance + a real on-device MLX
+      # generation. macOS-only because the probe drives a resident MLX model
+      # (the OS-portable equivalents already ran as unit tests above). This is a
+      # HARD GATE: any CRIT/HIGH regression (host check, anti-pivot token, forced
+      # chat mode, router 404s, CSP 'self', honest privacy block) fails the build.
+      # ----------------------------------------------------------------- #
+      - name: Live security probe (28 checks + real inference)
+        if: runner.os == 'macOS'
+        working-directory: alice-ai
+        shell: bash
+        run: |
+          # Pre-fetch the small probe MLX model so the run is deterministic.
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("mlx-community/Qwen3-0.6B-4bit")
+          PY
+          # Boot on an ephemeral port with the real Simple-mode env, then probe.
+          OUT="$(bash scripts/run_probe_backend.sh)"
+          echo "$OUT"
+          PORT="$(echo "$OUT" | sed -n 's/^PORT=//p')"
+          TOKEN="$(echo "$OUT" | sed -n 's/^TOKEN=//p')"
+          PID="$(echo "$OUT" | sed -n 's/^PID=//p')"
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          python scripts/security_probe.py "$PORT" "$TOKEN"
 
       # ----------------------------------------------------------------- #
       # pip-audit — flag known-vulnerable installed deps (non-blocking advisory:

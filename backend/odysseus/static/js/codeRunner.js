@@ -193,13 +193,19 @@ function loadPyodide() {
  * Run Python code via Pyodide
  */
 export async function runPython(code, panel) {
-  showLoading(panel, 'Loading Python runtime (first time ~10 MB)...');
+  // privacy-P3 (M8): the Python runner needs a ~10 MB runtime that is NOT
+  // bundled. The app's 'self'-only CSP blocks the CDN by design (fail-closed,
+  // no silent egress in private/offline mode). Show an HONEST, jargon-free note
+  // — not a raw "Failed to load Pyodide" — explaining this one feature needs the
+  // Advanced/online path. JS + HTML code-running has no external dependency.
+  const _T = (k) => (window.AliceI18n ? window.AliceI18n.t(k) : k);
+  showLoading(panel, _T('run.py.loading'));
 
   let py;
   try {
     py = await loadPyodide();
   } catch (e) {
-    showOutput(panel, 'Failed to load Python runtime: ' + e.message, true);
+    showOutput(panel, _T('run.py.blocked'), true);
     addCloseBtn(panel);
     return;
   }
