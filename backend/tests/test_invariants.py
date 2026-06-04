@@ -15,10 +15,13 @@ catch the regression at the source — not just at probe time.
        * no ``$``/fiat/credit-as-cash anywhere; the credit-only "待发放" framing
          is present; ``paid_acu`` is "0"; no "no logging" overclaim.
   3. SECURITY (deep-security-audit) — the Simple-mode boundary policy holds:
-       * dangerous tools are blocked + Advanced needs an admin account
+       * dangerous tools are blocked by default (Agent mode OFF), and Agent mode
+         only turns ON via a risk-acknowledged, server-persisted toggle
          (re-asserted here so the policy can't silently weaken);
-       * the app source wires TrustedHost + the local-token/Origin guard and
-         gates the privileged routers behind the Simple boundary.
+       * the ALWAYS-ON network guards (TrustedHost + per-launch local token +
+         Origin guard) do NOT depend on the Agent-mode toggle;
+       * the app source wires those middlewares + gates the privileged routers
+         behind the Simple boundary.
 
 A companion ``scripts/security_probe.py`` re-checks 1+3 LIVE against a running
 instance (28 checks); this file is the build-time gate that runs without one.
@@ -233,39 +236,92 @@ class HonestyInvariant(unittest.TestCase):
 class SecurityInvariant(unittest.TestCase):
     def setUp(self):
         os.environ["ALICE_SIMPLE_MODE"] = "1"
-        os.environ["ALICE_ADVANCED"] = "0"
+        os.environ.pop("ALICE_AGENT_MODE", None)        # persisted flag decides
+        os.environ.pop("ALICE_AGENT_MODE_LOCKED", None)
         os.environ["AUTH_ENABLED"] = "false"
+        # Point the persisted Agent-mode flag at a throwaway dir with NO flag, so
+        # the default (Agent mode OFF) holds regardless of the dev box's state.
+        self._tmp = tempfile.mkdtemp(prefix="alice-sec-inv-")
+        os.environ["ALICE_AI_DATA_DIR"] = self._tmp
+        from core import alice_security as s
+        s._invalidate_flag_cache()
 
     def test_dangerous_tools_blocked_by_default(self):
+        """Default OFF (no toggle): the agent surface is hard-blocked."""
         from core import alice_security as s
+        self.assertFalse(s.agent_mode_enabled())       # default OFF
         self.assertTrue(s.simple_boundary_active())
         for t in ("python", "bash", "read_file", "write_file", "api_call",
                   "app_api", "manage_mcp", "mcp__rag__search"):
             self.assertTrue(s.is_simple_mode_blocked_tool(t), t)
 
-    def test_advanced_requires_admin_account(self):
+    def test_agent_mode_requires_risk_ack_and_persists(self):
+        """The HIGH-2 resolution: Agent mode is a risk-acknowledged, server-
+        persisted toggle (NOT an admin account). Turning it on without the
+        explicit ack is refused; with the ack it persists + un-gates the tools."""
         from core import alice_security as s
-        os.environ["ALICE_ADVANCED"] = "1"  # env alone must NOT lift the boundary
+        # an un-acknowledged enable is refused → boundary still active
+        self.assertFalse(s.set_agent_mode(True, risk_acknowledged=False))
+        self.assertTrue(s.simple_boundary_active())
+        self.assertTrue(s.is_simple_mode_blocked_tool("python"))
+        # the acknowledged enable persists + un-gates the tools
+        self.assertTrue(s.set_agent_mode(True, risk_acknowledged=True))
+        self.assertTrue(s.agent_mode_enabled())
+        self.assertFalse(s.simple_boundary_active())
+        self.assertFalse(s.is_simple_mode_blocked_tool("python"))
+        # it is persisted server-side (survives a cache drop = a "restart")
+        s._invalidate_flag_cache()
+        self.assertTrue(s.agent_mode_enabled())
+        self.assertTrue((Path(self._tmp) / "agent_mode.json").exists())
+
+    def test_network_guards_independent_of_agent_toggle(self):
+        """The key safety property: the ALWAYS-ON network guards key off
+        simple_mode() ALONE, so turning Agent mode ON does NOT disable them."""
+        from core import alice_security as s
+        # OFF → network guard on
+        self.assertTrue(s.simple_mode())
+        # turn Agent mode ON
+        s.set_agent_mode(True, risk_acknowledged=True)
+        self.assertTrue(s.agent_mode_enabled())
+        # network guard is STILL on (independent of the toggle)
+        self.assertTrue(s.simple_mode())
+        # and a locked deployment can never enable the agent surface
+        os.environ["ALICE_AGENT_MODE_LOCKED"] = "1"
         try:
-            self.assertFalse(s.advanced_enabled())
-            self.assertTrue(s.simple_boundary_active())
+            self.assertFalse(s.agent_mode_enabled())
+            self.assertFalse(s.set_agent_mode(True, risk_acknowledged=True))
+            self.assertTrue(s.simple_mode())  # guard unaffected by the lock too
         finally:
-            os.environ["ALICE_ADVANCED"] = "0"
+            os.environ.pop("ALICE_AGENT_MODE_LOCKED", None)
 
     def test_app_source_wires_the_network_boundary(self):
-        """app.py must mount TrustedHost + the local-token/Origin guard under the
-        Simple boundary, and gate the privileged routers behind it (CRIT-2/HIGH-1).
-        Source-level so we don't need a live server."""
+        """app.py must mount TrustedHost + the local-token/Origin guard keyed off
+        simple_mode() (ALWAYS-ON, independent of the toggle), and gate the
+        privileged routers behind the Simple boundary (CRIT-2/HIGH-1). Source-
+        level so we don't need a live server."""
         app = _read(_ODY / "app.py")
         self.assertIn("TrustedHostMiddleware", app)
         self.assertIn("AliceLocalTokenMiddleware", app)
         self.assertIn("CROSS_ORIGIN_BLOCKED", app)
         self.assertIn("LOCAL_TOKEN_REQUIRED", app)
-        # privileged routers gated behind the Simple boundary
+        # the network boundary is installed under simple_mode() (NOT the toggle):
+        self.assertIn("if _alice_sec.simple_mode():", app)
+        # privileged routers gated behind the Simple boundary (toggle-controlled)
         self.assertIn("_ALICE_MOUNT_PRIVILEGED = not _alice_sec.simple_boundary_active()", app)
         for guarded in ("setup_shell_routes", "setup_cookbook_routes",
                         "setup_mcp_routes", "setup_vault_routes"):
             self.assertIn(guarded, app)
+
+    def test_toggle_route_present_and_token_guarded(self):
+        """The POST /alice/mode toggle exists, requires the risk ack server-side,
+        and rides the /alice/* token guard (so a foreign page can't flip it)."""
+        routes = _read(_ODY / "alice_routes.py")
+        self.assertIn('@router.post("/alice/mode")', routes)
+        self.assertIn("RISK_NOT_ACKNOWLEDGED", routes)
+        self.assertIn("set_agent_mode", routes)
+        # /alice/* is in the middleware's guarded prefixes (token + Origin).
+        app = _read(_ODY / "app.py")
+        self.assertIn('"/alice/"', app)
 
     def test_no_native_js_bridge_in_shell(self):
         """The PyWebView window must expose NO js_api (a page can't call native

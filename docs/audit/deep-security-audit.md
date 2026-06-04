@@ -53,7 +53,7 @@ reachable in a no-auth, end-user-facing deployment.
 - **CRIT-1 — Agent RCE: the non-admin tool blocklist is bypassed in the shipping config.** `src/tool_security.py:71-72` returns admin=True when no users exist → `python`/`read_file`/`write_file`/`api_call`/`app_api`(/`bash`) are reachable by the model via `src/tool_execution.py:435-558`. **Verified live:** `blocked_tools_for_owner(None) == []`.
 - **CRIT-2 — No CSRF/Origin/`Host` validation on `POST /api/chat_stream`** (`routes/chat_routes.py:344`) + no `TrustedHostMiddleware` (`app.py`). **Verified live:** a cross-origin `multipart/form-data` POST from `Origin: http://evil.com` is processed server-side (reached the chat handler; only failed on a bogus session id). Enables browser-pivot + DNS-rebinding RCE.
 - **HIGH-1 — Shell/cookbook/MCP/codex routes are mounted unconditionally** in the fork (`app.py:636-637,640-641,663-671,704-714`); UI-hidden ≠ route-disabled. (Direct `POST /api/shell/exec` *is* 403 unauth — verified — but the route family stays present and is the loopback target for `app_api`.)
-- **HIGH-2 — Simple/Advanced is a CSS class, not a security boundary** (`static/alice/alice-skin.js:193,212-217`: *"Behavioural code is untouched"*). `localStorage alice-advanced=1` or `?adv=1` reveals the full agent/tool surface; `mode=agent`/`allow_bash` are just form fields with no server-side Simple-mode lock.
+- **HIGH-2 — Simple/Advanced is a CSS class, not a security boundary** (`static/alice/alice-skin.js:193,212-217`: *"Behavioural code is untouched"*). `localStorage alice-advanced=1` or `?adv=1` reveals the full agent/tool surface; `mode=agent`/`allow_bash` are just form fields with no server-side Simple-mode lock. *(RESOLVED — now a server-side, risk-acknowledged, persisted Agent-mode toggle, default OFF; the network guards stay always-on regardless of the toggle. See the revised HIGH-2 resolution below.)*
 - **HIGH-3 — Dependencies are completely unpinned and there is no lockfile** (`backend/odysseus/requirements.txt`: 0 `==` pins; `backend/requirements.txt` loose; no `requirements.lock.txt` exists). Build-time supply-chain exposure for a signed binary.
 - **HIGH-4 — KaTeX + Mermaid loaded from `cdn.jsdelivr.net` with no SRI** (`static/index.html:206-208`) and the CSP `script-src` explicitly allows that origin (`core/middleware.py:92`). A compromised/MITM'd CDN executes arbitrary JS in the app. Contradicts PLAN §4 ("no CDN/external deps").
 - **MED-5 — Model verify has an existence-only fallback** when both the vendored manifest *and* HF OID metadata are unavailable (`backend/alice_ai/model_manager/downloader.py:421-436`) — but the revision is pinned, so blast radius is "whatever the immutable pin served," not arbitrary weights. Acceptable; documented.
@@ -382,7 +382,7 @@ explicit `ALICE_SIMPLE_MODE=1` (set by the supervisor) that the fork honors:
 5. **Force `mode=chat` server-side** in Simple mode (ignore an attacker-supplied `mode=agent`/`allow_bash`), and suppress agent tool emission unless Advanced is enabled **server-side** (not via `localStorage`).
 6. **Vendor KaTeX + Mermaid locally; remove `cdn.jsdelivr.net` from the CSP** (HIGH-4).
 7. **Ship a hash-pinned `requirements.lock.txt`** for backend + shell; build with `--require-hashes` (HIGH-3).
-8. **Lock the Simple/Advanced toggle to a server-side flag**, not `localStorage`/`?adv=1` (HIGH-2). If Advanced is ever exposed to 小白, it must re-introduce auth (an admin password) before unlocking shell/python/MCP — i.e. Advanced ⇒ create-admin-user ⇒ the odysseus non-admin model actually engages.
+8. **Lock the Simple/Advanced toggle to a server-side flag**, not `localStorage`/`?adv=1` (HIGH-2). *(Resolution revised 2026-06-04: the surface is gated by a server-side-persisted, risk-acknowledged USER toggle — default OFF, turns on only after an explicit risk-warning confirm — instead of an admin password. The owner's call: for a single-user local desktop app, informed consent is the right boundary, and forcing a password would just be friction the user clicks through. The hard requirement that the toggle is a real server boundary (not CSS) is met by `agent_mode.json` + `agent_mode_enabled()`; and the external-attacker protections (token/Host/Origin, item 3+4) stay always-on independent of the toggle, so the user opts into "the model can run tools" WITHOUT opting into "a web page can".)*
 
 > After 1–5 (and ideally 6–8), the residual posture matches odysseus's intended
 > "trusted local admin console," but now actually enforced for a loopback, no-auth,
@@ -402,9 +402,75 @@ fails CI on a regression. CRIT/HIGH summary:
 | CRIT-1 | Agent RCE via open tool gate | **FIXED** — `core/alice_security.py` hard-blocks `python`/`bash`/`read_file`/`write_file`/`api_call`/`app_api`/`mcp__*` at dispatch in Simple mode, independent of the owner gate; `test_simple_mode_security.py` + `SecurityInvariant`. |
 | CRIT-2 | No CSRF/Origin/Host check | **FIXED** — `AliceLocalTokenMiddleware` (per-launch token, cookie+header, `secrets.compare_digest`) + Origin/Sec-Fetch guard + `TrustedHostMiddleware` (loopback hosts). Probe: bad Host → 400, cross-origin/no-token → 403. |
 | HIGH-1 | Privileged routers mounted | **FIXED** — `_ALICE_MOUNT_PRIVILEGED = not simple_boundary_active()` gates shell/cookbook/hwfit/MCP/codex/claude/vault. Probe: shell/cookbook/mcp/vault → 404. |
-| HIGH-2 | CSS-only Simple/Advanced | **FIXED** — Advanced is server-side (`/alice/mode`), requires `ALICE_ADVANCED=1` **AND** an admin account; `localStorage`/`?adv=1` only reveals chrome the server still refuses. |
+| HIGH-2 | CSS-only Simple/Advanced | **FIXED (revised 2026-06-04 → informed-consent toggle).** The agent surface is now gated by a user-controlled **Agent-mode toggle, DEFAULT OFF**, that only turns ON after an explicit RISK-warning modal the user confirms — replacing the admin-account gate (owner decision: the right boundary for a single-user local desktop app is the user's informed consent, not a password). The choice is **server-side persisted** (`agent_mode.json` in the data dir, written only by the token-guarded `POST /alice/mode` with `risk_acknowledged:true`; read on every gate via `core/alice_security.agent_mode_enabled()`), so `localStorage`/`?adv=1` still only reveals chrome the server refuses. **Crucially, the always-on network guards (CRIT-2: token + TrustedHost + Origin) key off `simple_mode()` ALONE and are NOT disabled by the toggle** — so even with Agent mode ON, a cross-origin/no-token/bad-Host request is still 403/400 (a malicious page can't get the token, so it can't drive the now-un-gated tools). Probe (Agent ON): shell/exec & /v1 cross-origin/no-token → 403, bad Host → 400. See "HIGH-2 resolution (revised)" below. |
 | HIGH-3 | Unpinned deps / no lockfile | **FIXED** — `requirements.lock.txt` (macOS, hash-pinned, `--require-hashes`); Win/Linux locks compiled + hash-installed in CI. |
 | HIGH-4 | Un-SRI'd CDN scripts | **FIXED** — KaTeX/Mermaid vendored to `static/lib`; CSP `script-src 'self'`-only; jsdelivr removed (privacy P1). |
+
+### HIGH-2 resolution (revised 2026-06-04) — Agent-mode risk toggle (informed consent)
+
+The HIGH-2 fix shipped first as "Advanced requires an admin account"
+(`ALICE_ADVANCED=1` + an admin user). **The owner replaced that with a
+user-controlled, risk-acknowledged Agent-mode toggle** — same security bar (a
+real server-side boundary, not CSS), but the gate is the user's *informed
+consent* instead of a password (the right model for a single-user local desktop
+app; a forced password is friction the lone user just clicks through, not a
+defense against anyone they aren't).
+
+**What it is:**
+- The app ships in the safe, chat-only **Simple mode (default OFF)**. An
+  **"Agent mode" toggle in Settings** turns the full odysseus agent framework
+  (code-exec / file / tool / MCP) on. Toggling ON triggers a **clear bilingual
+  (EN + 中) risk-warning modal** — *"Agent mode lets Alice run code, read &
+  write files, and use tools on your computer. It's powerful but risky — a
+  malicious web page or a document you paste could try to misuse it. Only turn
+  this on if you understand and accept the risk."* — with **[Cancel]** /
+  **[I understand — turn on Agent mode]**. Only the explicit confirm enables it.
+- A persistent **"Agent mode on" badge/pill** in the chat top bar shows whenever
+  the powerful mode is active, with a one-click turn-off.
+
+**Where it lives (real server boundary, not CSS):**
+- `core/alice_security.py`: `agent_mode_enabled()` (replaces the admin-gated
+  `advanced_enabled()`, kept as an alias) reads a **server-side-persisted flag**
+  `agent_mode.json` (in the app data dir), written atomically + fail-closed —
+  it's only `True` if both `agent_mode` and `risk_acknowledged` are set. An
+  `ALICE_AGENT_MODE` env override (CI/dev) and an `ALICE_AGENT_MODE_LOCKED`
+  kill-switch are supported. `simple_boundary_active() = simple_mode() and not
+  agent_mode_enabled()` — unchanged shape, so the existing dispatch block, agent-
+  loop tool stripping, forced-chat-mode, and `_ALICE_MOUNT_PRIVILEGED` router
+  gate all follow the toggle automatically.
+- `alice_routes.py`: `GET /alice/mode` reports the state; `POST /alice/mode`
+  `{agent_mode, risk_acknowledged}` persists it. The route rides the existing
+  `AliceLocalTokenMiddleware`, so a no-token (`403 LOCAL_TOKEN_REQUIRED`) or
+  cross-origin (`403 CROSS_ORIGIN_BLOCKED`) request can't flip it; a token'd
+  turn-on without the ack is refused (`400 RISK_NOT_ACKNOWLEDGED`).
+- Frontend: `static/alice/alice-agent.js` (Settings toggle row + risk modal +
+  badge), `alice-overlays.css` (styling), `alice-i18n.js` (EN/中 copy).
+
+**What the toggle gates vs. what stays ALWAYS-ON (the key safety property):**
+- *Toggle-controlled:* the agent-tools-at-dispatch block
+  (`SIMPLE_MODE_BLOCKED_TOOLS`), the agent-loop tool advertising, the forced
+  chat mode, and (at launch) the privileged router mount + MCP autostart.
+- *ALWAYS-ON regardless of the toggle (CRIT-2):* the per-launch
+  `ALICE_LOCAL_TOKEN` requirement, `TrustedHostMiddleware`, and the
+  Origin/`Sec-Fetch-Site` guard — these key off `simple_mode()` **alone** (not
+  the boundary), because they defend against EXTERNAL attackers (browser-pivot /
+  DNS-rebind) the user never opted into. So even with Agent mode ON, a malicious
+  web page **cannot** drive the tools — it can't obtain the token.
+
+**Verified (live, isolated ephemeral ports, owner instances untouched):**
+- Default OFF → **`scripts/security_probe.py` = 28/28** (tools blocked at
+  dispatch, privileged routers 404, token/Host/Origin enforced).
+- Agent mode ON (set via the confirmed token'd toggle) → the agent tools execute
+  for the legit token UI (live dispatch of `python` returns `42`), the privileged
+  routers mount on the next launch (`/api/shell/exec` 422-not-404, `/api/mcp/
+  servers` 200), **and a cross-origin / no-token / bad-Host request is STILL
+  403/400** (shell-exec & `/v1` cross-origin/no-token → 403; bad Host → 400) —
+  the external-attack protections survive the toggle.
+- The persisted choice survives a restart; turning it back off restores 28/28.
+- Offline gates: `test_simple_mode_security.py` + `test_invariants.py::
+  SecurityInvariant` add `default-off-blocks-tools`, `toggle-on-requires-confirm
+  + persists`, `toggle-on-unblocks-tools`, and `network-guard-independent-of-
+  toggle` (88 backend tests green).
 
 ### MED/LOW sweep (this pass)
 

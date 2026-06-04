@@ -358,3 +358,79 @@
   .a-reconnect-mark,.a-reconnect-spin,.dl-wrap.a-fail .dl-aura{animation:none !important;}
   .a-reconnect-spin{border-top-color:var(--a-brand-400);opacity:.8;}
 }
+
+/* ============================================================================
+   AGENT MODE (HIGH-2 · informed-consent toggle). The risk-warning modal, the
+   Settings toggle row, and the always-on "Agent mode on" badge. On-brand
+   (orange spine, dark zinc), amber for the risk accent, NO red panic, NO emoji.
+   ============================================================================ */
+
+/* ---- risk-warning modal (shown only when turning Agent mode ON) ---- */
+.a-agent-backdrop{position:fixed;inset:0;z-index:90060;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);padding:24px;}
+.a-agent-modal{width:480px;max-width:100%;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#1a1714,#121011);border:1px solid var(--a-line-strong);
+  border-top:2px solid var(--a-warn);border-radius:var(--a-radius-lg);box-shadow:var(--a-card-lg);
+  overflow:hidden;animation:aAgentPop .16s var(--a-ease);}
+@keyframes aAgentPop{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+.a-agent-modal-head{display:flex;align-items:center;gap:12px;padding:20px 20px 12px;}
+.a-agent-warn-ico{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:11px;
+  background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.28);color:var(--a-warn);}
+.a-agent-warn-ico svg{stroke:var(--a-warn);}
+.a-agent-modal-title{font-size:16.5px;font-weight:700;letter-spacing:-.01em;color:var(--a-text);}
+.a-agent-modal-body{padding:0 20px 4px;font-size:13px;line-height:1.65;color:var(--a-text-2);}
+.a-agent-modal-body b{color:var(--a-text);font-weight:650;}
+.a-agent-modal-note{display:flex;align-items:flex-start;gap:8px;margin:14px 20px 4px;
+  padding:10px 12px;background:var(--a-well);border:1px solid var(--a-line);border-radius:9px;
+  font-size:11.5px;line-height:1.55;color:var(--a-text-3);}
+.a-agent-note-ico{flex:none;margin-top:1px;color:var(--a-brand-400);}
+.a-agent-note-ico svg{stroke:var(--a-brand-400);}
+.a-agent-modal-actions{display:flex;gap:10px;justify-content:flex-end;padding:18px 20px 20px;}
+.a-agent-btn{font-size:12.5px;font-weight:600;border-radius:9px;padding:9px 15px;cursor:pointer;
+  border:1px solid var(--a-line);transition:var(--a-dur) var(--a-ease);}
+.a-agent-btn-ghost{background:transparent;color:var(--a-text-2);}
+.a-agent-btn-ghost:hover{background:var(--a-surface-2);color:var(--a-text);border-color:var(--a-line-strong);}
+.a-agent-btn-danger{background:linear-gradient(180deg,#b45309,#92400e);color:#fff;border-color:rgba(245,158,11,.5);
+  box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 6px 18px -8px rgba(180,83,9,.7);}
+.a-agent-btn-danger:hover{filter:brightness(1.08);}
+.a-agent-btn-danger:disabled{opacity:.6;cursor:default;filter:none;}
+
+/* ---- Settings "Agent mode" toggle row ---- */
+.a-agent-row{display:flex;align-items:center;gap:14px;justify-content:space-between;
+  padding:14px 16px;margin:0 0 14px;background:var(--a-bg-2);
+  border:1px solid var(--a-line);border-radius:var(--a-radius);}
+.a-agent-row-main{display:flex;align-items:flex-start;gap:11px;min-width:0;}
+.a-agent-row-ico{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;
+  background:rgba(249,115,22,.1);border:1px solid var(--a-line-brand);color:var(--a-brand-400);margin-top:1px;}
+.a-agent-row-ico svg{stroke:var(--a-brand-400);}
+.a-agent-row-title{font-size:13.5px;font-weight:650;color:var(--a-text);}
+.a-agent-row-sub{font-size:11.5px;line-height:1.5;color:var(--a-text-3);margin-top:3px;}
+.a-agent-row-sub b{color:var(--a-text-2);}
+.a-agent-switch{flex:none;position:relative;width:44px;height:25px;border-radius:999px;cursor:pointer;
+  background:var(--a-well);border:1px solid var(--a-line-strong);transition:var(--a-dur) var(--a-ease);padding:0;}
+.a-agent-switch .a-agent-knob{position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;
+  background:var(--a-text-3);box-shadow:0 1px 3px rgba(0,0,0,.4);transition:var(--a-dur) var(--a-ease);}
+.a-agent-switch.on{background:linear-gradient(180deg,var(--a-brand-500),var(--a-brand-600));
+  border-color:var(--a-brand-600);box-shadow:0 0 14px rgba(249,115,22,.35) inset,0 0 10px rgba(249,115,22,.25);}
+.a-agent-switch.on .a-agent-knob{left:21px;background:#fff;}
+.a-agent-switch.locked{opacity:.5;cursor:not-allowed;}
+
+/* ---- always-on "Agent mode on" badge (chat top bar) ---- */
+.a-agent-badge{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font-size:11.5px;font-weight:600;letter-spacing:-.005em;color:var(--a-text);
+  padding:5px 9px 5px 8px;border-radius:999px;
+  background:linear-gradient(180deg,rgba(249,115,22,.16),rgba(249,115,22,.07));
+  border:1px solid var(--a-line-brand);transition:var(--a-dur) var(--a-ease);}
+.a-agent-badge:hover{border-color:var(--a-brand-500);background:linear-gradient(180deg,rgba(249,115,22,.22),rgba(249,115,22,.1));}
+.a-agent-badge svg{stroke:var(--a-brand-400);}
+.a-agent-badge-dot{width:7px;height:7px;border-radius:50%;background:var(--a-brand-400);
+  box-shadow:0 0 9px rgba(249,115,22,.7);animation:aBlink 2.4s ease-in-out infinite;}
+.a-agent-badge-lbl{color:var(--a-text-brand);}
+.a-agent-badge-off{display:inline-flex;margin-left:1px;opacity:.55;}
+.a-agent-badge-off svg{stroke:var(--a-text-3);}
+.a-agent-badge:hover .a-agent-badge-off{opacity:.9;}
+
+@media (prefers-reduced-motion: reduce){
+  .a-agent-modal{animation:none;}
+  .a-agent-badge-dot{animation:none;}
+}

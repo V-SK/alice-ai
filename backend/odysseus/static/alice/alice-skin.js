@@ -206,20 +206,22 @@
       document.querySelectorAll(sel).forEach(function (el) { el.classList.add('a-adv-only'); });
     });
   }
-  // HIGH-2 (deep-security-audit): Advanced is a SERVER-SIDE boundary, not a CSS
-  // class. The server (GET /alice/mode → {advanced}) is authoritative — the
-  // dangerous agent/tool/MCP/shell surface is blocked at dispatch + unmounted
-  // unless the server says Advanced is on (which also requires an admin
-  // account). So the UI only REVEALS Advanced chrome when BOTH the server
-  // confirms it AND the user opted in locally. `?adv=1`/localStorage alone can
-  // no longer unlock anything security-relevant — at most it reveals chrome
-  // that the server will still refuse, so we gate the reveal on the server too.
+  // HIGH-2 (deep-security-audit): the agent/tool surface is a SERVER-SIDE
+  // boundary, not a CSS class. The server (GET /alice/mode → {agent_mode}) is
+  // authoritative — the dangerous agent/tool/MCP/shell surface is blocked at
+  // dispatch + unmounted unless the user has turned ON Agent mode (a
+  // risk-acknowledged, server-persisted toggle; see alice-agent.js). So the UI
+  // only REVEALS the advanced chrome when BOTH the server confirms Agent mode
+  // is on AND the user opted in locally. `?adv=1`/localStorage alone can no
+  // longer unlock anything security-relevant — at most it reveals chrome that
+  // the server will still refuse, so we gate the reveal on the server too.
   var _serverAdvanced = false;  // until /alice/mode answers, assume Simple
   function _localAdvPref() {
     try { return localStorage.getItem('alice-advanced') === '1'; } catch (_) { return false; }
   }
   function advOn() {
-    // Reveal Advanced only when the server allows it AND the user opted in.
+    // Reveal the advanced chrome only when the server says Agent mode is on AND
+    // the user opted in locally.
     return _serverAdvanced && _localAdvPref();
   }
   function applyAdvanced() {
@@ -229,13 +231,17 @@
     try { localStorage.setItem('alice-advanced', on ? '1' : '0'); } catch (_) {}
     applyAdvanced();
   }
-  // Ask the server whether Advanced is actually enabled, then re-apply.
+  // Let alice-agent.js push the authoritative server Agent-mode state here when
+  // the toggle flips (so the reveal updates in the same gesture, no refetch).
+  function setServerAgentMode(on) { _serverAdvanced = !!on; applyAdvanced(); }
+  // Ask the server whether Agent mode is actually enabled, then re-apply. Reads
+  // the new `agent_mode` field (with `advanced` kept as a back-compat alias).
   function refreshServerMode() {
     try {
       fetch('/alice/mode', { credentials: 'same-origin' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
-          _serverAdvanced = !!(d && d.advanced);
+          _serverAdvanced = !!(d && (d.agent_mode || d.advanced));
           applyAdvanced();
         })
         .catch(function () { _serverAdvanced = false; applyAdvanced(); });
@@ -243,6 +249,7 @@
   }
   window.AliceShell = window.AliceShell || {};
   window.AliceShell.setAdvanced = setAdvanced;
+  window.AliceShell.setServerAgentMode = setServerAgentMode;
   window.AliceShell.advOn = advOn;
   window.AliceShell.markSVG = markSVG;   // reused by the reconnect overlay (M8)
   // exported so a host (or the language toggle) can re-localize live
@@ -268,6 +275,8 @@
     });
     // Earn surface (entry card / sidebar / open panel) re-localizes itself.
     if (window.AliceEarn && window.AliceEarn.relocalize) window.AliceEarn.relocalize();
+    // Agent-mode surface (settings row / badge / open risk modal) re-localizes.
+    if (window.AliceAgent && window.AliceAgent.relocalize) window.AliceAgent.relocalize();
     // Failure overlays (reconnect) re-localize live too.
     if (window.AliceFailure && window.AliceFailure.relocalize) window.AliceFailure.relocalize();
   }

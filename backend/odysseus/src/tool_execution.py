@@ -762,8 +762,9 @@ async def execute_tool_block(
             desc = f"{tool}: BLOCKED"
             result = {
                 "error": (
-                    f"Tool '{tool}' is disabled in Simple mode. Enable Advanced "
-                    "mode (which requires creating an admin account) to use it."
+                    f"Tool '{tool}' is disabled in Simple mode. Turn on Agent "
+                    "mode in Settings (you'll be asked to acknowledge the risk) "
+                    "to let Alice use it."
                 ),
                 "exit_code": 1,
             }

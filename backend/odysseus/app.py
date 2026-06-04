@@ -743,6 +743,10 @@ app.include_router(calendar_router)
 # (route absent) rather than 403 (route present, the loopback target for
 # app_api). Gated by the same server-side Simple boundary as the tool dispatch.
 _ALICE_MOUNT_PRIVILEGED = not _alice_sec.simple_boundary_active()
+# Record the import-time decision so /alice/mode can tell the UI when a runtime
+# Agent-mode toggle needs a relaunch to mount the MCP/shell/vault routers (the
+# per-turn chat agent tools flip live; routers can't un/re-mount at runtime).
+_alice_sec.record_privileged_mounted(_ALICE_MOUNT_PRIVILEGED)
 
 # Shell (user-facing command execution)
 if _ALICE_MOUNT_PRIVILEGED:

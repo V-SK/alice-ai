@@ -83,33 +83,88 @@ def get_manager():
 router = APIRouter()
 
 
-@router.get("/alice/mode")
-async def alice_mode() -> dict:
-    """Expose the SERVER-SIDE Simple/Advanced boundary (HIGH-2).
+def _mode_payload() -> dict:
+    """The server-side Agent-mode state the UI renders against (HIGH-2).
 
-    The frontend must learn whether Advanced is *actually* enabled from the
-    server, not from a CSS-only ``localStorage``/``?adv=1`` toggle. When
-    ``advanced`` is false, the dangerous agent/tool/MCP/shell surface is
+    The frontend learns whether the powerful Agent mode is *actually* on from
+    the SERVER, not from a CSS-only ``localStorage``/``?adv=1`` toggle. When
+    ``agent_mode`` is false, the dangerous agent/tool/MCP/shell surface is
     blocked at dispatch + unmounted regardless of any client flag, so the UI
-    must not reveal that chrome. ``can_enable_advanced`` tells the UI whether an
-    admin account exists (the prerequisite for a genuine Advanced build).
+    must not reveal that chrome. ``locked`` is the deployment kill-switch
+    (Agent mode can never be enabled). ``network_guard_always_on`` documents the
+    invariant that the external-attack protections do NOT depend on this toggle.
     """
     from core import alice_security as _sec
 
-    advanced = _sec.advanced_enabled()
-    try:
-        from core.auth import AuthManager
-
-        _admin_configured = bool(AuthManager().is_configured)
-    except Exception:
-        _admin_configured = False
     return {
-        "simple_mode": _sec.simple_mode(),
-        "advanced": advanced,
-        # Advanced requires BOTH ALICE_ADVANCED=1 AND an admin account, so the
-        # UI can prompt "create an admin account to unlock Advanced".
-        "can_enable_advanced": _admin_configured,
+        "agent_mode": _sec.agent_mode_enabled(),
+        "locked": _sec.agent_mode_locked(),
+        # Always-on regardless of the toggle (CRIT-2): the per-launch token +
+        # TrustedHost + Origin guard defend against external attackers, which
+        # the user never opted into. The toggle only controls the agent tools.
+        "network_guard_always_on": _sec.simple_mode(),
+        # The chat agent tools flip live; the MCP/shell/vault routers only mount
+        # at launch, so a runtime turn-on may need a relaunch for the FULL
+        # surface (the UI can show "restart to enable advanced tools").
+        "restart_required_for_full": _sec.restart_required_for_full_agent(),
+        # Back-compat aliases so any older client still parses a sane shape.
+        "simple_mode": _sec.simple_boundary_active(),
+        "advanced": _sec.agent_mode_enabled(),
     }
+
+
+@router.get("/alice/mode")
+async def alice_mode() -> dict:
+    """Report the current server-side Agent-mode state (read-only)."""
+    return _mode_payload()
+
+
+@router.post("/alice/mode")
+async def alice_set_mode(request: Request) -> JSONResponse:
+    """Flip the Agent-mode toggle, server-side persisted (HIGH-2 resolution).
+
+    Body: ``{"agent_mode": true|false, "risk_acknowledged": true}``.
+
+    Turning Agent mode ON REQUIRES ``risk_acknowledged: true`` — the explicit
+    user confirm from the risk-warning modal. Without it the request is refused
+    (400) and the surface stays OFF. Turning it OFF always succeeds (the easy
+    "turn it back off" path). A locked deployment refuses to enable (409).
+
+    This route rides the SAME ``AliceLocalTokenMiddleware`` as the rest of
+    ``/alice/*``: a no-token or cross-origin/DNS-rebound request is already
+    rejected (403) before reaching here, so ONLY the legit token-bearing,
+    same-origin UI can change the persisted boundary — a malicious web page
+    cannot flip it on (and even if it could, it still can't get the token to
+    drive the tools). The new state takes effect immediately for tool dispatch
+    + router gating in this process and survives a restart.
+    """
+    from core import alice_security as _sec
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse(status_code=400, content={"error": "invalid JSON"})
+
+    want_on = bool(body.get("agent_mode"))
+    risk_ack = bool(body.get("risk_acknowledged"))
+
+    if want_on and _sec.agent_mode_locked():
+        return JSONResponse(status_code=409,
+                            content={"error": "AGENT_MODE_LOCKED",
+                                     **_mode_payload()})
+    if want_on and not risk_ack:
+        # The modal's [I understand] button sends risk_acknowledged:true; a
+        # turn-on without it is refused so consent is never assumed.
+        return JSONResponse(status_code=400,
+                            content={"error": "RISK_NOT_ACKNOWLEDGED",
+                                     **_mode_payload()})
+
+    try:
+        _sec.set_agent_mode(want_on, risk_acknowledged=risk_ack)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("failed to persist agent mode")
+        return JSONResponse(status_code=503, content={"error": str(exc)})
+    return JSONResponse(content=_mode_payload())
 
 
 @router.get("/alice/device")

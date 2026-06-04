@@ -65,6 +65,30 @@
                          zh: 'Alice 在<b>本机运行</b>。无遥测、无云端——聊天记录只保存在本机、无计费。<span class="a-pending">待发放</span> 仅适用于自愿参与的「赚取」。' },
     'chat.hint':       { en: 'Advanced tools, web &amp; agents live under <b>+</b>', zh: '高级工具、联网与智能体在 <b>+</b> 中' },
 
+    // ---- Agent mode (the risk-acknowledged tools toggle, HIGH-2) ----
+    // Default OFF; turning it ON requires the explicit risk confirm below. The
+    // copy is honest about both the power AND the risk; no emoji.
+    'agent.settings.title':  { en: 'Agent mode', zh: '智能体模式' },
+    'agent.settings.desc':   { en: 'Let Alice run code, read &amp; write files, and use tools on your computer. Off by default — safe chat only.',
+                               zh: '让 Alice 在你的电脑上运行代码、读写文件并使用工具。默认关闭——仅安全聊天。' },
+    'agent.settings.on':     { en: 'On', zh: '已开启' },
+    'agent.settings.off':    { en: 'Off', zh: '已关闭' },
+    'agent.settings.locked': { en: 'Disabled by this installation', zh: '此安装已禁用' },
+    'agent.settings.restart':{ en: 'Restart Alice to fully enable advanced tools.', zh: '重启 Alice 以完整启用高级工具。' },
+    // The risk-warning modal (shown only when toggling ON).
+    'agent.risk.title':  { en: 'Turn on Agent mode?', zh: '开启智能体模式？' },
+    'agent.risk.body':   { en: 'Agent mode lets Alice run code, read &amp; write files, and use tools on your computer. It’s powerful but risky — a malicious web page or a document you paste could try to misuse it. Only turn this on if you understand and accept the risk.',
+                           zh: '智能体模式让 Alice 在你的电脑上运行代码、读写文件并使用工具。它很强大，但也有风险——恶意网页或你粘贴的文档可能试图滥用它。只有在你理解并接受风险的前提下才开启。' },
+    'agent.risk.note':   { en: 'Your network is still protected: a web page you visit cannot drive these tools. This only changes what you let Alice do.',
+                           zh: '你的网络仍受保护：你访问的网页无法操控这些工具。这只改变你允许 Alice 做的事。' },
+    'agent.risk.cancel': { en: 'Cancel', zh: '取消' },
+    'agent.risk.confirm':{ en: 'I understand — turn on Agent mode', zh: '我已理解——开启智能体模式' },
+    // The always-visible "on" indicator (badge/pill) + its tooltip.
+    'agent.badge':       { en: 'Agent mode on', zh: '智能体模式已开启' },
+    'agent.badge.title': { en: 'Agent mode is ON — Alice can run code, files &amp; tools on this computer. Click to turn off.',
+                           zh: '智能体模式已开启——Alice 可在本机运行代码、文件与工具。点击关闭。' },
+    'agent.badge.off':   { en: 'Turn off', zh: '关闭' },
+
     // ---- starter chips (§7.2) ----
     'starter.email':   { en: 'Write a leave-request email', zh: '写一封请假邮件' },
     'starter.explain': { en: 'Explain blockchain simply', zh: '用大白话解释区块链' },
