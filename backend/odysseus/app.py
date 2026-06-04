@@ -856,6 +856,20 @@ try:
 except Exception as _alice_mm_exc:  # noqa: BLE001
     logger.warning("Alice Model Manager routes registration failed: %s", _alice_mm_exc, exc_info=True)
 
+# Earn bridge routes (M7 — PLAN §5 / design 04 §5.1): /alice/earn/status,
+# /open-miner, /download-url. Read-only Miner bridge over the shared
+# ~/.alice/identity.json (NEVER written here) + a fire-and-forget launch of the
+# KNOWN Alice Miner ONLY (no arbitrary command/path — no new exec surface). The
+# inert phase-2 GPU-earn teaser sits behind ALICE_AI_GPU_EARN_ENABLED=false.
+# Mounted under /alice/* so the Simple-mode local-token + Origin/Host middleware
+# guards it with no extra wiring; imports NOTHING from the inference path.
+try:
+    from alice_ai.earn import register_earn_routes
+    register_earn_routes(app)
+    logger.info("Alice Earn bridge routes registered (/alice/earn/*)")
+except Exception as _alice_earn_exc:  # noqa: BLE001
+    logger.warning("Alice Earn bridge routes registration failed: %s", _alice_earn_exc, exc_info=True)
+
 # Shell health probe (PLAN §2.2): the native shell waits on GET /healthz before
 # showing the window. odysseus's own check is /api/health; expose a top-level
 # /healthz alias the shell can poll without auth (it is added before the auth

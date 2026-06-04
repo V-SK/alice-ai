@@ -265,6 +265,8 @@
     document.querySelectorAll('.a-lang-toggle').forEach(function (el) {
       if (window.AliceI18n) el.textContent = window.AliceI18n.otherLabel();
     });
+    // Earn surface (entry card / sidebar / open panel) re-localizes itself.
+    if (window.AliceEarn && window.AliceEarn.relocalize) window.AliceEarn.relocalize();
   }
   function injectLangToggle() {
     // a small EN/中 toggle near the chat top-bar (titlebar is native in the shell)

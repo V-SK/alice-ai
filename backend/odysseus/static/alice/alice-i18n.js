@@ -104,6 +104,56 @@
     'settings.advanced.eyebrow': { en: 'for power users', zh: '面向高级用户' },
     'settings.earn':    { en: 'Earn ALICE', zh: '赚取 ALICE' },
 
+    // ---- Earn ALICE bridge (M7 — design 04). Credit-only, no $, no rate. ----
+    'earn.nav':         { en: 'Earn ALICE', zh: '赚取 ALICE' },
+    // entry card (chat empty-state)
+    'earn.entry.title': { en: 'Earn ALICE with your computer', zh: '用你的电脑赚取 ALICE' },
+    'earn.entry.sub':   { en: 'Run the Alice Miner alongside chat — rewards go to your Alice address.',
+                          zh: '在聊天之外运行 Alice 矿工——奖励发放到你的 Alice 地址。' },
+    'earn.entry.open':  { en: 'Open Alice Miner', zh: '打开 Alice 矿工' },
+    'earn.entry.get':   { en: 'Get the Alice Miner', zh: '获取 Alice 矿工' },
+    'earn.entry.learn': { en: 'Learn more', zh: '了解更多' },
+    // reward address row
+    'earn.addr.label':  { en: 'Rewards to', zh: '奖励发放至' },
+    'earn.addr.copy':   { en: 'Copy address', zh: '复制地址' },
+    'earn.addr.copied': { en: 'Copied', zh: '已复制' },
+    'earn.addr.watch':  { en: 'watch-only', zh: '仅查看' },
+    'earn.addr.none':   { en: 'Set a reward address in the Alice Miner or Wallet.',
+                          zh: '请在 Alice 矿工或钱包中设置奖励地址。' },
+    // per-state headlines/hints
+    'earn.s.set.head':  { en: 'Almost there — set a reward address', zh: '就差一步——设置奖励地址' },
+    'earn.s.set.hint':  { en: 'Open the Alice Miner; its setup creates your reward address.',
+                          zh: '打开 Alice 矿工，其引导流程会创建你的奖励地址。' },
+    'earn.s.ready.head':{ en: 'Earn ALICE by mining', zh: '通过挖矿赚取 ALICE' },
+    'earn.s.haveaddr.head': { en: 'Get the Alice Miner to start earning', zh: '获取 Alice 矿工开始赚取' },
+    // launch feedback / fallback
+    'earn.open.ok':     { en: 'Alice Miner is opening…', zh: 'Alice 矿工正在打开…' },
+    'earn.open.fail':   { en: "Couldn't open it — open the download page instead.",
+                          zh: '无法打开——请改用下载页面。' },
+    // honest credit-only footnote (NO $, NO rate)
+    'earn.foot':        { en: 'Mining rewards are credited to your Alice address and shown as <span class="a-pending">pending · 待发放</span> until distributed. No cash, no fees here.',
+                          zh: '挖矿奖励将记入你的 Alice 地址，在发放前显示为 <span class="a-pending">待发放 · pending</span>。此处无现金、无手续费。' },
+
+    // ---- the Alice story (block 2, design 04 §4) — honest, no hype/numbers ----
+    'story.eyebrow':    { en: 'Why Alice', zh: '关于 Alice' },
+    'story.1.h':        { en: "Alice's own models", zh: 'Alice 自有模型' },
+    'story.1.b':        { en: 'Alice ships its own model family — Alice, Alice Lite, Alice Pro — built for privacy. They run on your hardware, and chat never leaves this device.',
+                          zh: 'Alice 拥有自己的模型家族——Alice、Alice Lite、Alice Pro——以隐私为先。它们在你的硬件上运行，聊天不会离开本机。' },
+    'story.2.h':        { en: 'A network, not a company', zh: '一个网络，而非一家公司' },
+    'story.2.b':        { en: 'Alice is a protocol: people contribute compute and earn for it. There is no central owner — the network belongs to the people who run it.',
+                          zh: 'Alice 是一个协议：人们贡献算力并因此获得回报。没有中心化的拥有者——网络属于运行它的人。' },
+    'story.3.h':        { en: 'Where you fit in', zh: '你的位置' },
+    'story.3.b':        { en: 'Today you can mine with the Alice Miner (above). Soon you will be able to lend your idle GPU to run Alice for others — you are already running it locally.',
+                          zh: '现在你可以用 Alice 矿工挖矿（见上）。很快你将能把空闲的 GPU 借给网络，为他人运行 Alice——而你本就已在本机运行它。' },
+
+    // ---- phase-2 GPU contribute teaser (block 3, design 04 §6) — INERT ----
+    'gpu.title':        { en: 'Contribute your GPU to Alice', zh: '把你的 GPU 贡献给 Alice' },
+    'gpu.soon':         { en: 'coming soon', zh: '即将推出' },
+    'gpu.body':         { en: 'Soon you will be able to share your idle GPU with Alice’s inference network and earn ALICE for verified work. We’re finishing the network and the fairness checks that make rewards trustworthy.',
+                          zh: '很快你将能把空闲的 GPU 共享给 Alice 的推理网络，并因可验证的工作赚取 ALICE。我们正在完善网络与让奖励可信的公平性校验。' },
+    'gpu.priv':         { en: 'Your own chats are never shared — contribution will be a separate, opt-in mode.',
+                          zh: '你自己的聊天永远不会被共享——贡献将是一个独立、自愿开启的模式。' },
+
     // ---- errors (§7.2) ----
     'err.generic':     { en: 'Something went wrong. Alice will try again.', zh: '出了点问题，Alice 会重试。' },
     'err.copy':        { en: 'Copy details', zh: '复制详情' },

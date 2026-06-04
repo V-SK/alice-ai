@@ -110,6 +110,46 @@ st, _, rb = req("POST", "/alice/load",
 rec("/alice/load no-token REJECTED", st in (403, 401),
     f"status={st} (expect 403/401)")
 
+# ── 6b. Earn bridge (/alice/earn/*) rides the SAME token guard (M7) ─────────
+# Read-only status: rejected without the token, allowed with it; pure local I/O
+# (no network), credit-only honesty contract. open-miner: a mutating POST that
+# must be token-guarded AND reject a foreign Origin — we assert the GUARD only
+# (no body, evil Origin) so the probe never actually launches the Miner GUI.
+st, _, _ = req("GET", "/alice/earn/status")
+rec("/alice/earn/status no-token REJECTED", st in (403, 401),
+    f"status={st} (expect 403/401)")
+st, _, rb = req("GET", "/alice/earn/status", token_header=TOKEN, cookie=TOKEN,
+                want_read=True)
+earn = {}
+try:
+    earn = json.loads(rb)
+except Exception:
+    pass
+rec("/alice/earn/status with-token OK", st == 200 and "state" in earn,
+    f"status={st} state={earn.get('state')!r}")
+# honesty / credit-only invariant printed into the payload (no $, paid_acu=0)
+rec("earn status credit-only (paid_acu=0, no GPU-earn live)",
+    str(earn.get("honesty", {}).get("paid_acu")) == "0"
+    and earn.get("honesty", {}).get("credit_only") is True
+    and earn.get("gpu_earn", {}).get("enabled") is False
+    and earn.get("gpu_earn", {}).get("status") == "coming_soon",
+    f"honesty={earn.get('honesty')} gpu={earn.get('gpu_earn', {}).get('status')}")
+# the read-only identity surface never leaks a secret (no pubkey/keystore key)
+_idk = set((earn.get("identity") or {}).keys())
+rec("earn identity surface has no secret fields",
+    not (_idk & {"pubkey", "keystore_path", "keystore", "seed", "password"}),
+    f"identity_keys={sorted(_idk)}")
+# open-miner: no-token POST rejected (guard present; no launch triggered)
+st, _, _ = req("POST", "/alice/earn/open-miner")
+rec("/alice/earn/open-miner no-token REJECTED", st in (403, 401),
+    f"status={st} (expect 403/401)")
+# open-miner: cross-origin POST WITH token still rejected (CSRF/DNS-rebind)
+st, _, _ = req("POST", "/alice/earn/open-miner",
+               headers={"Origin": "http://evil.com"},
+               token_header=TOKEN, cookie=TOKEN)
+rec("/alice/earn/open-miner cross-origin REJECTED", st == 403,
+    f"status={st} (expect 403)")
+
 # ── 7. privileged routers 404 in Simple mode ───────────────────────────────
 for path, label in [
     ("/api/shell/exec", "shell"),
