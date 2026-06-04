@@ -21,11 +21,23 @@ echo "==> Creating venv at ${VENV} (using ${PY})"
 # shellcheck disable=SC1091
 "${VENV}/bin/python" -m pip install --quiet --upgrade pip setuptools wheel
 
-echo "==> Installing M0 deps from backend/requirements.txt"
-# Install from inside backend/ so the editable path dep `-e ../../alice-acp`
-# (relative to the requirements file) resolves to the sibling alice-acp repo.
-# pip resolves relative requirement paths against its CWD, not the -r file's dir.
-( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install -r requirements.txt )
+# HIGH-3 (deep-security-audit): a SIGNED RELEASE build must install from the
+# hash-pinned lock with enforcement, so the bundle can only contain the exact
+# audited artifacts. Opt in with ALICE_LOCKED_INSTALL=1 (set by the release
+# build); plain dev iteration uses the loose requirements.txt for speed.
+if [ "${ALICE_LOCKED_INSTALL:-0}" = "1" ]; then
+  echo "==> Installing PINNED deps (--require-hashes) from backend/requirements.lock.txt"
+  # The editable first-party alice-acp checkout is not in the (PyPI-only) lock;
+  # install it separately (pin it by git commit in the real build).
+  "${VENV}/bin/python" -m pip install --require-hashes -r "${REPO_ROOT}/backend/requirements.lock.txt"
+  ( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install --no-deps -e ../../alice-acp )
+else
+  echo "==> Installing M0 deps from backend/requirements.txt (loose dev env)"
+  # Install from inside backend/ so the editable path dep `-e ../../alice-acp`
+  # (relative to the requirements file) resolves to the sibling alice-acp repo.
+  # pip resolves relative requirement paths against CWD, not the -r file's dir.
+  ( cd "${REPO_ROOT}/backend" && "${VENV}/bin/python" -m pip install -r requirements.txt )
+fi
 
 echo "==> Smoke: import alice_acp.local_inference"
 "${VENV}/bin/python" -c "import alice_acp.local_inference as li; print('  OK', li.__file__)"

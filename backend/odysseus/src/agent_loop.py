@@ -1378,6 +1378,20 @@ async def stream_agent_loop(
         # MCP tools are namespaced dynamically, so hide all MCP schemas for
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
+    # CRIT-1 (deep-security-audit): blocked_tools_for_owner returns EMPTY in
+    # Alice's no-auth config (the owner gate fails open), so the loop above
+    # never strips the dangerous tools. In Simple mode, also never ADVERTISE
+    # the code-exec/file/loopback/MCP tools to the model (the dispatch layer is
+    # the hard backstop, but don't even tempt the model / leak the schemas).
+    try:
+        from core.alice_security import (
+            simple_boundary_active, SIMPLE_MODE_BLOCKED_TOOLS,
+        )
+        if simple_boundary_active():
+            disabled_tools.update(SIMPLE_MODE_BLOCKED_TOOLS)
+            mcp_mgr = None
+    except Exception:
+        pass
 
     _t0 = time.time()
     _needs_admin = _detect_admin_intent(messages)

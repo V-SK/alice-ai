@@ -381,6 +381,21 @@ def setup_chat_routes(
         compare_mode = str(form_data.get("compare_mode", "")).lower() == "true"
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        # CRIT/HIGH (deep-security-audit) — in Simple mode the server FORCES
+        # chat mode and ignores any client-supplied mode=agent / allow_bash /
+        # tool-enable. A malicious page (or a 小白 who toggled a field) can't
+        # drive an agent turn; the agent/tool surface is only reachable in a
+        # genuine (admin-backed) Advanced build. This is enforced server-side,
+        # not via the CSS-only Simple/Advanced class.
+        try:
+            from core.alice_security import simple_boundary_active
+            if simple_boundary_active():
+                if chat_mode == "agent":
+                    logger.info("Simple mode: forcing client mode=agent → chat")
+                chat_mode = "chat"
+                allow_bash = "false"
+        except Exception:
+            pass
         # Did the USER explicitly pick agent mode? (vs. us auto-escalating
         # below). Skill extraction should only learn from real agent sessions,
         # not chats we quietly promoted for a notes/calendar intent.

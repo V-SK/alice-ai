@@ -83,6 +83,35 @@ def get_manager():
 router = APIRouter()
 
 
+@router.get("/alice/mode")
+async def alice_mode() -> dict:
+    """Expose the SERVER-SIDE Simple/Advanced boundary (HIGH-2).
+
+    The frontend must learn whether Advanced is *actually* enabled from the
+    server, not from a CSS-only ``localStorage``/``?adv=1`` toggle. When
+    ``advanced`` is false, the dangerous agent/tool/MCP/shell surface is
+    blocked at dispatch + unmounted regardless of any client flag, so the UI
+    must not reveal that chrome. ``can_enable_advanced`` tells the UI whether an
+    admin account exists (the prerequisite for a genuine Advanced build).
+    """
+    from core import alice_security as _sec
+
+    advanced = _sec.advanced_enabled()
+    try:
+        from core.auth import AuthManager
+
+        _admin_configured = bool(AuthManager().is_configured)
+    except Exception:
+        _admin_configured = False
+    return {
+        "simple_mode": _sec.simple_mode(),
+        "advanced": advanced,
+        # Advanced requires BOTH ALICE_ADVANCED=1 AND an admin account, so the
+        # UI can prompt "create an admin account to unlock Advanced".
+        "can_enable_advanced": _admin_configured,
+    }
+
+
 @router.get("/alice/device")
 async def alice_device() -> dict:
     return get_manager().device_public()

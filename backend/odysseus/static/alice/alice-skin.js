@@ -206,8 +206,21 @@
       document.querySelectorAll(sel).forEach(function (el) { el.classList.add('a-adv-only'); });
     });
   }
-  function advOn() {
+  // HIGH-2 (deep-security-audit): Advanced is a SERVER-SIDE boundary, not a CSS
+  // class. The server (GET /alice/mode → {advanced}) is authoritative — the
+  // dangerous agent/tool/MCP/shell surface is blocked at dispatch + unmounted
+  // unless the server says Advanced is on (which also requires an admin
+  // account). So the UI only REVEALS Advanced chrome when BOTH the server
+  // confirms it AND the user opted in locally. `?adv=1`/localStorage alone can
+  // no longer unlock anything security-relevant — at most it reveals chrome
+  // that the server will still refuse, so we gate the reveal on the server too.
+  var _serverAdvanced = false;  // until /alice/mode answers, assume Simple
+  function _localAdvPref() {
     try { return localStorage.getItem('alice-advanced') === '1'; } catch (_) { return false; }
+  }
+  function advOn() {
+    // Reveal Advanced only when the server allows it AND the user opted in.
+    return _serverAdvanced && _localAdvPref();
   }
   function applyAdvanced() {
     document.documentElement.classList.toggle('a-advanced', advOn());
@@ -215,6 +228,18 @@
   function setAdvanced(on) {
     try { localStorage.setItem('alice-advanced', on ? '1' : '0'); } catch (_) {}
     applyAdvanced();
+  }
+  // Ask the server whether Advanced is actually enabled, then re-apply.
+  function refreshServerMode() {
+    try {
+      fetch('/alice/mode', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          _serverAdvanced = !!(d && d.advanced);
+          applyAdvanced();
+        })
+        .catch(function () { _serverAdvanced = false; applyAdvanced(); });
+    } catch (_) { _serverAdvanced = false; applyAdvanced(); }
   }
   window.AliceShell = window.AliceShell || {};
   window.AliceShell.setAdvanced = setAdvanced;
@@ -668,11 +693,14 @@
      ========================================================================= */
   function boot() {
     if (window.AliceI18n) window.AliceI18n.setLang(window.AliceI18n.lang()); // sets <html lang>
-    // demo/standalone + verify hook: ?adv=1 forces Advanced on, ?adv=0 off
+    // ?adv=1/0 only records the LOCAL preference (cosmetic reveal). It can NOT
+    // unlock the agent/tool surface — that is gated server-side (HIGH-2). The
+    // reveal still requires the server to confirm Advanced via /alice/mode.
     var _qa = new URLSearchParams(location.search).get('adv');
     if (_qa === '1' || _qa === '0') { try { localStorage.setItem('alice-advanced', _qa); } catch (_) {} }
     deOdysseusBody();
     applyAdvanced();
+    refreshServerMode();   // authoritative Simple/Advanced from the server
     tagAdvanced();
     injectPrivacyPill();
     injectComposerNote();

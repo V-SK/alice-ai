@@ -746,6 +746,36 @@ async def execute_tool_block(
         logger.info(f"Tool blocked by user: {tool}")
         return desc, result
 
+    # CRIT-1 (deep-security-audit) — Simple-mode HARD BLOCK at dispatch.
+    # The dangerous tools (python/bash/read_file/write_file/api_call/app_api/
+    # manage_*/mcp__*) are gated below behind `_owner_is_admin`, but that gate
+    # FAILS OPEN when no users exist (owner_is_admin_or_single_user → True), so
+    # in Alice's shipping no-auth config every chat is "admin" and the gate is a
+    # no-op. Treat Simple mode as the LEAST-privileged session and refuse these
+    # tools UNCONDITIONALLY here — before the owner gate — so neither a forced
+    # agent turn, a prompt-injection, nor a malicious local model can reach
+    # local code execution. Defeated only by a genuine (admin-backed) Advanced
+    # build (see core.alice_security.simple_boundary_active).
+    try:
+        from core.alice_security import is_simple_mode_blocked_tool
+        if is_simple_mode_blocked_tool(tool):
+            desc = f"{tool}: BLOCKED"
+            result = {
+                "error": (
+                    f"Tool '{tool}' is disabled in Simple mode. Enable Advanced "
+                    "mode (which requires creating an admin account) to use it."
+                ),
+                "exit_code": 1,
+            }
+            logger.warning("Simple-mode dispatch block: tool=%s owner=%r", tool, owner)
+            return desc, result
+    except Exception:
+        # Fail closed for the code-exec/file/loopback set if the policy import
+        # ever breaks — never silently allow these through.
+        from core.alice_security import SIMPLE_MODE_BLOCKED_TOOLS as _SMB
+        if isinstance(tool, str) and (tool in _SMB or tool.startswith("mcp__")):
+            return f"{tool}: BLOCKED", {"error": f"Tool '{tool}' is disabled.", "exit_code": 1}
+
     if tool in _ADMIN_TOOLS and not _owner_is_admin(owner):
         desc = f"{tool}: BLOCKED"
         result = {"error": f"Tool '{tool}' requires an admin user.", "exit_code": 1}

@@ -57,8 +57,12 @@
     'chat.trust':      { en: 'Runs on your computer · Fully private · Free forever',
                          zh: '在本机运行 · 完全私密 · 永久免费' },
     'chat.placeholder':{ en: 'Message Alice…', zh: '写点什么…（按 Enter 发送）' },
-    'chat.note':       { en: 'Alice runs <b>on this device</b>. Conversations are private — no network, no logging, no credit. <span class="a-pending">待发放</span> applies only to opt-in Earn.',
-                         zh: 'Alice 在<b>本机运行</b>。对话完全私密——不联网、不记录、无计费。<span class="a-pending">待发放</span> 仅适用于自愿参与的「赚取」。' },
+    // privacy-P2 (privacy-audit): chat history IS persisted to a LOCAL SQLite
+    // DB (data/app.db) so you can scroll back — it never leaves the device, but
+    // "no logging" read as "nothing is written down", which is inaccurate.
+    // Honest copy: no telemetry, no cloud, chats saved only on this device.
+    'chat.note':       { en: 'Alice runs <b>on this device</b>. No telemetry, no cloud — your chats are saved only on this device, no credit. <span class="a-pending">待发放</span> applies only to opt-in Earn.',
+                         zh: 'Alice 在<b>本机运行</b>。无遥测、无云端——聊天记录只保存在本机、无计费。<span class="a-pending">待发放</span> 仅适用于自愿参与的「赚取」。' },
     'chat.hint':       { en: 'Advanced tools, web &amp; agents live under <b>+</b>', zh: '高级工具、联网与智能体在 <b>+</b> 中' },
 
     // ---- starter chips (§7.2) ----

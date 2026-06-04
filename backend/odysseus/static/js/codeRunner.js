@@ -140,7 +140,15 @@ function addCopyBtn_unused(panel, text) {
 function addCloseBtn(_panel) { /* no-op */ }
 
 /**
- * Lazy-load Pyodide from CDN
+ * Lazy-load Pyodide from CDN (in-browser Python sandbox, ~10 MB).
+ *
+ * NOTE (privacy-P3 / HIGH-4): Pyodide is NOT vendored — it is large
+ * (runtime + on-demand wheels) and is only ever touched when a user clicks
+ * "Run" on a Python code block (a power-user feature). The app CSP is
+ * 'self'-only, so this CDN fetch is BLOCKED unless the deployment explicitly
+ * widens the CSP. That is the intended offline-first behaviour: the in-browser
+ * Python runner fails closed (no silent egress on first code-run) rather than
+ * phoning a CDN. JavaScript/HTML code-running has no external dependency.
  */
 function loadPyodide() {
   if (pyodideInstance) return Promise.resolve(pyodideInstance);

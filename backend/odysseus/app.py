@@ -107,6 +107,93 @@ app.add_middleware(
 # ========= SECURITY HEADERS MIDDLEWARE =========
 app.add_middleware(SecurityHeadersMiddleware)
 
+# ========= ALICE SIMPLE-MODE NETWORK BOUNDARY (deep-security-audit) =========
+# CRIT-2(a) — DNS-rebinding: reject any request whose Host isn't loopback. The
+# rebind attack points attacker.example.com → 127.0.0.1, then talks to us
+# same-origin; TrustedHostMiddleware drops it because the Host/SNI is the
+# attacker's domain, not 127.0.0.1/localhost.
+#
+# CRIT-2(b) + HIGH-2 — anti-browser-pivot: the shell mints a per-launch random
+# secret (ALICE_LOCAL_TOKEN) and hands it to the backend AND injects it into the
+# served UI (a SameSite=Strict cookie + the X-Alice-Local header path). The
+# backend REQUIRES that token on all state-changing / streaming API routes
+# (/api/*, /v1/*, /alice/*). A random web page the user merely visits can't read
+# the token (same-origin policy) nor set the cookie, so cross-origin AND
+# DNS-rebind requests are rejected even before guessing the ephemeral port. An
+# Origin/Sec-Fetch-Site check rides along as defense-in-depth. /healthz stays
+# open (the shell polls it pre-token).
+from core import alice_security as _alice_sec
+
+if _alice_sec.simple_mode():
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    # Loopback hostnames only. Starlette's TrustedHost compares the HOST portion
+    # (it strips ":<port>"), so the ephemeral port is handled automatically — a
+    # bare hostname list is correct (a "127.0.0.1:*" pattern would assert-fail).
+    # The shell always connects as 127.0.0.1; "localhost" is allowed for
+    # dev/manual use. A DNS-rebound attacker.example.com Host is rejected (400).
+    _ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+
+    class AliceLocalTokenMiddleware(BaseHTTPMiddleware):
+        """Require the per-launch shared secret on state-changing/stream API
+        routes, and reject foreign-Origin requests. Read-only static + health
+        are exempt so the page can bootstrap and fetch the token."""
+
+        # Paths that MUST carry the token (the agent/chat/model surface + any
+        # mutating API). Matched by prefix.
+        _GUARDED_PREFIXES = ("/api/", "/v1/", "/alice/")
+        # Open even inside the guarded prefixes (liveness/version the UI needs
+        # before it has applied the cookie on a hard refresh; both are
+        # read-only and leak nothing sensitive).
+        _OPEN_EXACT = {"/api/health", "/api/version", "/api/ready"}
+
+        async def dispatch(self, request: Request, call_next):
+            path = request.url.path or ""
+            # Only guard the API surface; static assets, the SPA HTML, /healthz,
+            # /login etc. are served openly so the page can boot + get the cookie.
+            guarded = any(path.startswith(p) for p in self._GUARDED_PREFIXES)
+            if not guarded or path in self._OPEN_EXACT:
+                return await call_next(request)
+
+            # 1) Origin / Sec-Fetch-Site guard (defense-in-depth). A cross-site
+            #    fetch carries Sec-Fetch-Site: cross-site|same-site, or an Origin
+            #    that isn't our own loopback origin. Reject those outright.
+            sfs = request.headers.get("sec-fetch-site")
+            if sfs and sfs not in ("same-origin", "none"):
+                return JSONResponse(status_code=403,
+                                     content={"error": "CROSS_ORIGIN_BLOCKED"})
+            origin = request.headers.get("origin")
+            if origin:
+                host = (request.headers.get("host") or "").strip()
+                ok_origins = {f"http://{host}", f"https://{host}",
+                              "http://127.0.0.1", "http://localhost"}
+                # Allow the exact loopback origin (with the real port) only.
+                if origin not in ok_origins and not (
+                    origin.startswith("http://127.0.0.1:")
+                    or origin.startswith("http://localhost:")
+                ):
+                    return JSONResponse(status_code=403,
+                                         content={"error": "CROSS_ORIGIN_BLOCKED"})
+
+            # 2) Per-launch shared-secret token (cookie OR header). Only the
+            #    legit served UI has it; a foreign / rebound page does not.
+            token = _alice_sec.local_token()
+            if token:
+                supplied = (
+                    request.headers.get(_alice_sec.LOCAL_TOKEN_HEADER)
+                    or request.cookies.get(_alice_sec.LOCAL_TOKEN_COOKIE)
+                    or ""
+                )
+                if not secrets.compare_digest(supplied, token):
+                    return JSONResponse(status_code=403,
+                                         content={"error": "LOCAL_TOKEN_REQUIRED"})
+            return await call_next(request)
+
+    app.add_middleware(AliceLocalTokenMiddleware)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_ALLOWED_HOSTS)
+    logger.info("Alice Simple-mode network boundary enabled "
+                "(TrustedHost + local-token + Origin guard)")
+
 
 # ========= REQUEST TIMEOUT (FALLBACK FOR HUNG HANDLERS) =========
 # If a single request takes longer than REQUEST_HARD_TIMEOUT, abort it and
@@ -632,17 +719,27 @@ from routes.calendar_routes import setup_calendar_routes
 calendar_router = setup_calendar_routes()
 app.include_router(calendar_router)
 
+# HIGH-1 (deep-security-audit): the shell/cookbook/hwfit/MCP/codex/vault routers
+# expose command execution, pip-install/serve/rebuild, the MCP surface, and the
+# secret vault. In Simple mode they MUST NOT be mounted at all — so they 404
+# (route absent) rather than 403 (route present, the loopback target for
+# app_api). Gated by the same server-side Simple boundary as the tool dispatch.
+_ALICE_MOUNT_PRIVILEGED = not _alice_sec.simple_boundary_active()
+
 # Shell (user-facing command execution)
-from routes.shell_routes import setup_shell_routes
-app.include_router(setup_shell_routes())
+if _ALICE_MOUNT_PRIVILEGED:
+    from routes.shell_routes import setup_shell_routes
+    app.include_router(setup_shell_routes())
 
-# Cookbook (model download/serve/cache, cookbook state sync)
-from routes.cookbook_routes import setup_cookbook_routes
-app.include_router(setup_cookbook_routes())
+    # Cookbook (model download/serve/cache, cookbook state sync)
+    from routes.cookbook_routes import setup_cookbook_routes
+    app.include_router(setup_cookbook_routes())
 
-# Hardware model fitting (cookbook "What Fits?" tab)
-from routes.hwfit_routes import setup_hwfit_routes
-app.include_router(setup_hwfit_routes())
+    # Hardware model fitting (cookbook "What Fits?" tab)
+    from routes.hwfit_routes import setup_hwfit_routes
+    app.include_router(setup_hwfit_routes())
+else:
+    logger.info("Simple mode: shell/cookbook/hwfit routers NOT mounted (HIGH-1)")
 
 # Model A/B Comparison
 from routes.compare_routes import setup_compare_routes
@@ -665,10 +762,16 @@ from src.mcp_manager import McpManager
 from src.agent_tools import set_mcp_manager
 from routes.mcp_routes import setup_mcp_routes
 
+# Keep the manager object (other code references it), but do NOT mount the MCP
+# routes — nor connect any MCP servers (see startup) — in Simple mode (HIGH-1 /
+# MED-3). The agent loop also nulls mcp_mgr in Simple mode (CRIT-1).
 mcp_manager = McpManager()
 set_mcp_manager(mcp_manager)
-app.include_router(setup_mcp_routes(mcp_manager))
-logger.info("MCP routes initialized")
+if _ALICE_MOUNT_PRIVILEGED:
+    app.include_router(setup_mcp_routes(mcp_manager))
+    logger.info("MCP routes initialized")
+else:
+    logger.info("Simple mode: MCP router NOT mounted (HIGH-1/MED-3)")
 
 # AI Interaction tools (debates, pipelines, self-managing AI, UI control)
 from src.ai_interaction import set_session_manager as set_ai_session_manager, set_memory_manager as set_ai_memory_manager, set_rag_manager as set_ai_rag_manager
@@ -677,15 +780,19 @@ set_ai_memory_manager(memory_manager, memory_vector)
 set_ai_rag_manager(rag_manager, personal_docs_mgr)
 logger.info("AI interaction tools initialized (session, memory, RAG, UI control)")
 
-# Webhooks
-from routes.webhook_routes import setup_webhook_routes
-app.include_router(setup_webhook_routes(webhook_manager, auth_manager, session_manager, api_key_manager))
+# Webhooks + API Tokens (external-integration surface: outbound webhooks +
+# minting ody_ bearer tokens). Not part of the 小白 chat path; gated off in
+# Simple mode (HIGH-1) so the token-mint / webhook surface isn't reachable.
+if _ALICE_MOUNT_PRIVILEGED:
+    from routes.webhook_routes import setup_webhook_routes
+    app.include_router(setup_webhook_routes(webhook_manager, auth_manager, session_manager, api_key_manager))
 
-# API Tokens
-from routes.api_token_routes import setup_api_token_routes
-app.include_router(setup_api_token_routes())
+    from routes.api_token_routes import setup_api_token_routes
+    app.include_router(setup_api_token_routes())
 
-logger.info("Webhook & API token routes initialized")
+    logger.info("Webhook & API token routes initialized")
+else:
+    logger.info("Simple mode: webhook/api-token routers NOT mounted (HIGH-1)")
 
 # Notes (Google Keep-style notes/todos)
 from routes.note_routes import setup_note_routes
@@ -696,22 +803,25 @@ from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
 app.include_router(email_router)
 
-# Codex integration — HTTP surface for the Codex plugin/MCP bridge. Reuses
-# api_token scopes (todos:read|write, email:read|draft|send) so external
-# Codex sessions can only touch the data the user explicitly allowed. Mounted
-# AFTER email so the codex_routes can borrow the email router for shared
-# search/threading helpers.
-from routes.codex_routes import setup_codex_routes, setup_claude_routes
-app.include_router(setup_codex_routes(
-    email_router=email_router,
-    memory_router=memory_router,
-    calendar_router=calendar_router,
-    document_router=document_router,
-))
-app.include_router(setup_claude_routes())
+# Codex/Claude integration — HTTP surface for the Codex plugin/MCP bridge, and
+# the secret Vault. External-tool bridges + secret storage are not part of the
+# 小白 chat path; gated off in Simple mode (HIGH-1).
+if _ALICE_MOUNT_PRIVILEGED:
+    # Mounted AFTER email so codex_routes can borrow the email router for
+    # shared search/threading helpers.
+    from routes.codex_routes import setup_codex_routes, setup_claude_routes
+    app.include_router(setup_codex_routes(
+        email_router=email_router,
+        memory_router=memory_router,
+        calendar_router=calendar_router,
+        document_router=document_router,
+    ))
+    app.include_router(setup_claude_routes())
 
-from routes.vault_routes import setup_vault_routes
-app.include_router(setup_vault_routes())
+    from routes.vault_routes import setup_vault_routes
+    app.include_router(setup_vault_routes())
+else:
+    logger.info("Simple mode: codex/claude/vault routers NOT mounted (HIGH-1)")
 
 # Contacts (CardDAV)
 from routes.contacts_routes import setup_contacts_routes
@@ -758,12 +868,33 @@ async def alice_healthz() -> Dict[str, str]:
 # ========= ROUTES (kept in app.py) =========
 
 def _serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:
-    """Read an HTML file and inject the CSP nonce into inline <script> tags."""
+    """Read an HTML file and inject the CSP nonce into inline <script> tags.
+
+    Also plants the per-launch anti-pivot token (CRIT-2 b) as a SameSite=Strict
+    cookie so every same-origin fetch from the legit UI carries it automatically
+    — a foreign / DNS-rebound page can neither read nor set this cookie, so its
+    requests to the guarded API routes are rejected by AliceLocalTokenMiddleware.
+    """
     with open(file_path, "r", encoding="utf-8") as f:
         html = f.read()
     nonce = getattr(request.state, "csp_nonce", "")
     html = html.replace("{{CSP_NONCE}}", nonce)
-    return HTMLResponse(html)
+    resp = HTMLResponse(html)
+    try:
+        _tok = _alice_sec.local_token()
+        if _tok:
+            # SameSite=Strict: the cookie is NOT sent on cross-site navigations
+            # or sub-resource loads, so an attacker page can't ride it. httponly
+            # is intentionally OFF so the UI can also echo it as the
+            # X-Alice-Local header on the few fetches that prefer headers; the
+            # token is per-launch and confers no value off the local origin.
+            resp.set_cookie(
+                _alice_sec.LOCAL_TOKEN_COOKIE, _tok,
+                samesite="strict", secure=False, httponly=False, path="/",
+            )
+    except Exception:
+        pass
+    return resp
 
 @app.get("/")
 async def serve_index(request: Request):
@@ -923,7 +1054,13 @@ async def _startup_event():
         except BaseException as e:
             logger.warning(f"MCP startup failed (non-critical): {type(e).__name__}: {e}")
 
-    _startup_tasks.append(asyncio.create_task(_startup_mcp_connections()))
+    # MED-3 (deep-security-audit): in Simple mode do NOT register/connect MCP
+    # servers — the MCP tool surface is hard-blocked at dispatch + nulled in the
+    # agent loop, so connecting them only adds attack surface + log noise.
+    if not _alice_sec.simple_boundary_active():
+        _startup_tasks.append(asyncio.create_task(_startup_mcp_connections()))
+    else:
+        logger.info("Simple mode: skipping MCP server registration/connect (MED-3)")
 
     # Pre-warm the RAG tool index off the request path. Loading the local
     # embedding model + opening ChromaDB + indexing the built-in tools is a

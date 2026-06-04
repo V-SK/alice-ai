@@ -19,6 +19,7 @@ surface. Exactly two OS processes total: this shell + the backend.
 from __future__ import annotations
 
 import os
+import secrets
 import signal
 import subprocess
 import sys
@@ -30,16 +31,29 @@ from alice_shell import paths
 class BackendProcess:
     """A supervised uvicorn child bound to a loopback port."""
 
-    def __init__(self, port: int, *, log_path: Path | None = None) -> None:
+    def __init__(self, port: int, *, log_path: Path | None = None,
+                 local_token: str | None = None) -> None:
         self.port = port
         self._proc: subprocess.Popen | None = None
         self._log_path = log_path
         self._log_fh = None
+        # Per-launch anti-pivot shared secret (deep-security-audit CRIT-2 b):
+        # generated once per process, handed to the backend via env AND injected
+        # into the served UI (cookie). A random web page / DNS-rebound origin
+        # can't read or set it, so its requests to the guarded API are rejected.
+        self.local_token = local_token or secrets.token_urlsafe(32)
 
     def _child_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["AUTH_ENABLED"] = "false"
         env["LOCALHOST_BYPASS"] = "true"
+        # Simple-mode security boundary ON by default (deep-security-audit):
+        # hard-blocks the dangerous agent tools at dispatch, unmounts the
+        # shell/cookbook/MCP/codex/vault routers, forces chat mode, and requires
+        # the per-launch token + loopback Host on the API. Advanced (which
+        # re-enables that surface) is a separate, admin-account-gated build.
+        env.setdefault("ALICE_SIMPLE_MODE", "1")
+        env["ALICE_LOCAL_TOKEN"] = self.local_token
         # The backend binds this and alice_provider seeds its endpoint here.
         env["ALICE_BACKEND_PORT"] = str(self.port)
         env.setdefault("ALICE_AI_MODELS_DIR", str(paths.models_dir()))
