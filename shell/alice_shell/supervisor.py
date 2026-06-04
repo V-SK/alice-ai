@@ -56,6 +56,12 @@ class BackendProcess:
         env["ALICE_LOCAL_TOKEN"] = self.local_token
         # The backend binds this and alice_provider seeds its endpoint here.
         env["ALICE_BACKEND_PORT"] = str(self.port)
+        # AI-private writable data dir (OS-native: %LOCALAPPDATA%\Alice on
+        # Windows, ~/.alice on mac/Linux). Seeded here so the backend child + all
+        # its cwd-relative writes (sqlite, search cache, logs) land on a writable
+        # disk regardless of OS — the whole odysseus tree already honours
+        # ALICE_AI_DATA_DIR. setdefault so an explicit override (CI/dev) wins.
+        env.setdefault("ALICE_AI_DATA_DIR", str(paths.data_root() / "ai-data"))
         env.setdefault("ALICE_AI_MODELS_DIR", str(paths.models_dir()))
         # The backend runs from backend/odysseus/ (so its sibling alice_provider
         # / alice_routes import by cwd), but those import OUR alice_ai.* package
@@ -113,17 +119,28 @@ class BackendProcess:
         else:
             stdout = stderr = None
 
-        # New session/process-group so we can kill the whole tree on quit.
-        kwargs: dict = {"cwd": str(bdir), "env": self._child_env(),
-                        "stdout": stdout, "stderr": stderr}
-        if os.name == "posix":
-            kwargs["start_new_session"] = True  # setsid → own process group
-        else:  # Windows: new process group for CTRL_BREAK / taskkill /T
-            kwargs["creationflags"] = getattr(
-                subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-            )
+        env = self._child_env()
+        if os.name == "nt":
+            # Windows (M5): pin the child to a kill-on-job-close Job Object so
+            # that if the SHELL dies for ANY reason (clean quit, crash, an
+            # external taskkill of the parent), the OS terminates the frozen
+            # backend child + any grandchildren — Windows has no SIGTERM-the-
+            # process-group equivalent, and Popen.kill() only kills the direct
+            # child (grandchildren would leak the loopback port). The helper
+            # spawns suspended → assigns to the job → resumes (closes the
+            # spawn-before-join race). See shell/alice_shell/win_job.py.
+            from alice_shell.win_job import JobObjectProcess
 
-        self._proc = subprocess.Popen(cmd, **kwargs)
+            self._proc = JobObjectProcess(
+                cmd, cwd=str(bdir), env=env, stdout=stdout, stderr=stderr,
+            )
+        else:
+            # POSIX (macOS/Linux): own session/process-group so we SIGTERM-then-
+            # SIGKILL the whole group on quit (unchanged from M2 — proven).
+            self._proc = subprocess.Popen(
+                cmd, cwd=str(bdir), env=env, stdout=stdout, stderr=stderr,
+                start_new_session=True,  # setsid → own process group
+            )
 
     def is_alive(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -132,7 +149,14 @@ class BackendProcess:
         return None if self._proc is None else self._proc.poll()
 
     def stop(self, *, term_grace_s: float = 5.0) -> None:
-        """SIGTERM the process group, then SIGKILL if it lingers (R5)."""
+        """Graceful stop, then a whole-tree hard kill if it lingers (R5/F9).
+
+        POSIX: SIGTERM the process group, then SIGKILL (unchanged from M2).
+        Windows: CTRL_BREAK for a graceful uvicorn shutdown, then
+        ``TerminateJobObject`` (kills the entire job — child + grandchildren),
+        then close the job handle (kill-on-close is the backstop if anything
+        survived). ``Popen.kill()`` alone would leak grandchildren.
+        """
         if self._proc is None:
             return
         if self._proc.poll() is None:
@@ -150,6 +174,7 @@ class BackendProcess:
                     if os.name == "posix":
                         os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
                     else:
+                        # Whole-job atomic kill (not just the direct child).
                         self._proc.kill()
                 except (ProcessLookupError, PermissionError, OSError):
                     pass
@@ -157,6 +182,12 @@ class BackendProcess:
                     self._proc.wait(timeout=term_grace_s)
                 except subprocess.TimeoutExpired:
                     pass
+        # Windows: drop the job handle. With KILL_ON_JOB_CLOSE this guarantees
+        # no stale backend survives the shell even on a path that skipped kill().
+        if os.name == "nt":
+            close_job = getattr(self._proc, "close_job", None)
+            if callable(close_job):
+                close_job()
         if self._log_fh is not None:
             try:
                 self._log_fh.flush()

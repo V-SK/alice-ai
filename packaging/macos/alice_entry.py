@@ -37,6 +37,20 @@ def _meipass() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _default_data_root() -> Path:
+    """OS-native AI-private data root (mirrors alice_shell.paths.data_root).
+
+    Inlined here so the backend role doesn't depend on the shell package being
+    importable at this point. Windows → ``%LOCALAPPDATA%\\Alice``; mac/Linux →
+    ``~/.alice`` (unchanged from M2). ``$ALICE_AI_DATA_DIR`` overrides upstream.
+    """
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            return Path(local) / "Alice"
+    return Path.home() / ".alice"
+
+
 def _prepare_import_roots(base: Path) -> Path:
     """Put the bundled source roots on sys.path so by-cwd + package imports work.
 
@@ -72,10 +86,12 @@ def _run_backend(base: Path) -> int:
     """
     backend_dir = _prepare_import_roots(base)
 
-    data_dir = Path(
-        os.environ.get("ALICE_AI_DATA_DIR")
-        or (Path.home() / ".alice" / "ai-data")
-    )
+    # AI-private writable data dir (OS-native). NOT the shared ~/.alice identity
+    # contract — that is separate ($ALICE_IDENTITY_DIR). On Windows this lands
+    # under %LOCALAPPDATA%\Alice; on mac/Linux it stays ~/.alice (unchanged from
+    # M2). The shell role normally sets ALICE_AI_DATA_DIR before spawning us, so
+    # this default only fires if the backend is launched standalone.
+    data_dir = Path(os.environ.get("ALICE_AI_DATA_DIR") or _default_data_root() / "ai-data")
     data_dir.mkdir(parents=True, exist_ok=True)
     os.environ["ALICE_AI_DATA_DIR"] = str(data_dir)
 

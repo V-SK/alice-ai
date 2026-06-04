@@ -1,0 +1,72 @@
+# Alice AI — Linux x64 packaging requirements INPUT (M6).
+#
+# The cross-OS dependency set for the LINUX frozen build. Same one swap as the
+# Windows input (PLAN §6): the inference runtime is llama-cpp-python (GGUF),
+# never mlx (Apple-only). The application code is OS-agnostic — see
+# requirements.win.txt for the full rationale.
+#
+# ---------------------------------------------------------------------------
+# HASH-PINNED LOCK: generate ON LINUX (manylinux wheels), never hand-edited.
+# ---------------------------------------------------------------------------
+# The Linux CI job (release.yml) + build_appimage.sh compile this into
+# backend/requirements.lock.linux.txt with:
+#
+#   pip install uv
+#   uv pip compile --generate-hashes --no-header \
+#       backend/requirements.linux.txt -o backend/requirements.lock.linux.txt
+#   pip install --require-hashes -r backend/requirements.lock.linux.txt
+#
+# Commit the generated lock (from CI on ubuntu-22.04) for a reproducible,
+# hash-enforced release build.
+# ---------------------------------------------------------------------------
+
+# Our Track-A inference engine (editable path dep; pinned by git commit in CI).
+-e ../../alice-acp
+
+# --- odysseus web stack ---
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+httpx
+pydantic>=2.0
+pydantic-settings>=2.0
+SQLAlchemy
+
+# --- odysseus core-path libs ---
+pypdf
+beautifulsoup4
+charset-normalizer
+numpy
+markdown
+python-dateutil
+
+# --- INFERENCE RUNTIME (the swap): llama-cpp-python instead of mlx ---------- #
+# Default = CPU wheel. Optional CUDA build via build_appimage.sh --cuda:
+#   pip install llama-cpp-python --extra-index-url \
+#     https://abetlen.github.io/llama-cpp-python/whl/cu124
+llama-cpp-python
+
+# Model weights download.
+huggingface_hub
+
+# The native PyWebView shell. On Linux PyWebView drives GTK + WebKit2 via
+# PyGObject (gi). PyGObject is the Python binding; the webkit2gtk/GTK NATIVE
+# libraries are vendored INTO the AppImage by build_appimage.sh (so no
+# `apt install` on the user's machine — closes the only PyWebView Linux gap,
+# PLAN §2.3). pycairo is PyGObject's drawing dep.
+pywebview
+PyGObject
+pycairo
+
+# --- odysseus runtime deps app.py imports at module load ---
+bcrypt
+pyotp
+qrcode[pil]
+croniter
+icalendar
+caldav
+youtube-transcript-api
+mcp
+
+# NOTE: mlx / mlx-lm are intentionally ABSENT (Apple-Silicon only).

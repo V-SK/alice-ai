@@ -1,0 +1,88 @@
+# Alice AI — Windows x64 packaging requirements INPUT (M5).
+#
+# This is the cross-OS dependency set for the WINDOWS frozen build. It mirrors
+# backend/requirements.txt but makes the one platform-specific swap the package
+# turns on (PLAN §6, the mlx→llama_cpp swap):
+#
+#       macOS arm64 runtime  =  mlx + mlx-lm        (Apple Metal)
+#       Windows x64 runtime  =  llama-cpp-python    (GGUF: CPU default / CUDA opt)
+#
+# The application code is OS-agnostic — alice_acp.local_inference's
+# ``runtime_for_probe`` maps the host to a ModelRuntimeFamily (Apple→mlx,
+# NVIDIA→cuda, AMD/CPU→gguf/cpu) and the adapters import mlx_lm / llama_cpp
+# LAZILY in the matching branch only. So on Windows mlx is simply never imported;
+# we just don't install it here, and we DO install llama-cpp-python.
+#
+# ---------------------------------------------------------------------------
+# HASH-PINNED LOCK: generate ON WINDOWS, never hand-edited.
+# ---------------------------------------------------------------------------
+# Wheel hashes are per-platform — a lock generated on macOS cannot install on
+# Windows (different .whl artifacts). The Windows CI job (release.yml) and
+# build_exe.ps1 compile this file into backend/requirements.lock.win.txt with:
+#
+#   pip install uv
+#   uv pip compile --generate-hashes --no-header `
+#       backend/requirements.win.txt -o backend/requirements.lock.win.txt
+#   pip install --require-hashes -r backend/requirements.lock.win.txt
+#
+# Commit the generated requirements.lock.win.txt (produced by CI on windows-2022)
+# so the release build is reproducible + hash-enforced, exactly like the macOS
+# requirements.lock.txt. Until that first Windows CI run lands it, this input
+# file is the source of truth and the build compiles the lock on the fly.
+# ---------------------------------------------------------------------------
+
+# Our Track-A inference engine (editable path dep — pinned by git commit in CI,
+# not hash-pinned here; it is a first-party source checkout, see the macOS lock
+# header). Relative to backend/ — install from inside backend/.
+-e ../../alice-acp
+
+# --- odysseus web stack (the forked FastAPI app) ---
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+httpx
+pydantic>=2.0
+pydantic-settings>=2.0
+SQLAlchemy
+
+# --- odysseus core-path libs ---
+pypdf
+beautifulsoup4
+charset-normalizer
+numpy
+markdown
+python-dateutil
+
+# --- INFERENCE RUNTIME (the swap): llama-cpp-python instead of mlx ---------- #
+# Default = the CPU wheel (always works; the safe 小白 default, PLAN §6-Q5).
+# For the optional CUDA/GPU Windows build, install the CUDA wheel instead via the
+# extra index (build_exe.ps1 --cuda), e.g.:
+#   pip install llama-cpp-python --extra-index-url \
+#     https://abetlen.github.io/llama-cpp-python/whl/cu124
+# The catalog runtime family (cuda vs cpu) is chosen at RUN time by the hardware
+# probe + n_gpu_layers; the only build difference is which wheel ships.
+llama-cpp-python
+
+# Model weights download (first-run fetch of Alice Lite to the user data dir).
+huggingface_hub
+
+# The native PyWebView shell. On Windows PyWebView drives the Edge WebView2
+# runtime via pythonnet/clr_loader — pin them so the frozen shell finds the
+# .NET backend. WebView2 is present on all supported Windows 10/11.
+pywebview
+pythonnet
+
+# --- odysseus runtime deps app.py imports at module load (Advanced-gated; their
+#     behaviour is off in Simple mode, hard imports must still resolve) ---
+bcrypt
+pyotp
+qrcode[pil]
+croniter
+icalendar
+caldav
+youtube-transcript-api
+mcp
+
+# NOTE: mlx / mlx-lm are intentionally ABSENT (Apple-Silicon only — they have no
+# Windows wheel and the Windows hardware probe never selects the "mlx" runtime).

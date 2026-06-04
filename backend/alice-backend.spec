@@ -124,22 +124,50 @@ datas += _tree(ACP_SRC / "alice_acp", "_alice_src/alice_acp", prune_top=("tests"
 
 # --------------------------------------------------------------------------- #
 # BINARIES + DATA for native/third-party deps PyInstaller must really resolve.
+#
+# Per-OS inference runtime (PLAN §6, the mlx→llama_cpp swap):
+#   * macOS-arm64 : MLX (Apple Metal). The hardware probe returns runtime "mlx";
+#                   llama_cpp is absent from the mac Simple-mode venv.
+#   * Windows x64 : llama-cpp-python (GGUF) — CPU wheel by default, CUDA wheel
+#                   for the optional GPU build. mlx does not exist off Apple.
+#   * Linux x64   : llama-cpp-python (GGUF) — CPU default, CUDA optional.
+# The application code is OS-agnostic: ``runtime_for_probe`` maps Apple→mlx,
+# NVIDIA→cuda, AMD/CPU→gguf/cpu, and the runtime adapters import mlx_lm / llama_cpp
+# LAZILY inside the matching branch only (verified in alice_acp.local_inference
+# .runtimes + alice_ai.model_manager). So the swap is purely which native wheel
+# this spec bundles — never a code path. We assert the right one is present below.
 # --------------------------------------------------------------------------- #
 binaries = []
 
-# MLX (Apple-Silicon inference): ships compiled extensions + the Metal kernel
-# library loaded via ctypes/dlopen. collect_dynamic_libs grabs the .so/.dylib;
-# collect_data_files grabs the .metallib + any package data. macOS-arm64 only.
-if sys.platform == "darwin":
+IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform.startswith("win")
+IS_LINUX = sys.platform.startswith("linux")
+
+if IS_MAC:
+    # MLX (Apple-Silicon inference): ships compiled extensions + the Metal kernel
+    # library loaded via ctypes/dlopen. collect_dynamic_libs grabs the .so/.dylib;
+    # collect_data_files grabs the .metallib + any package data. macOS-arm64 only.
     binaries += collect_dynamic_libs("mlx")
     datas += collect_data_files("mlx")           # *.metallib etc.
     datas += collect_data_files("mlx_lm")        # tokenizer/template assets
 
-# Optional CUDA/CPU GGUF runtime (not installed in the mac Simple venv; present
-# in the Win/Linux locks). Guarded so this same spec degrades cleanly on mac.
+# llama-cpp-python (GGUF runtime). Loads its compiled lib via ctypes → PyInstaller
+# misses it without collect_dynamic_libs; collect_data_files grabs the bundled
+# llama.cpp shared lib + any ggml backends (CPU + CUDA when the CUDA wheel built
+# them). REQUIRED on Win/Linux (it IS the runtime there) — the spec fails loudly
+# if a Win/Linux build env forgot to install it from the per-OS lock. On mac it's
+# optional (mlx is the runtime) and bundled only if present.
 if _have("llama_cpp"):
     binaries += collect_dynamic_libs("llama_cpp")
     datas += collect_data_files("llama_cpp")
+elif IS_WIN or IS_LINUX:
+    raise SystemExit(
+        "alice-backend.spec: llama-cpp-python is REQUIRED for the "
+        f"{'Windows' if IS_WIN else 'Linux'} build (it is the GGUF inference "
+        "runtime). Install it from the per-OS lock first:\n"
+        "  pip install --require-hashes -r backend/requirements.lock."
+        f"{'win' if IS_WIN else 'linux'}.txt"
+    )
 
 # Optional RAG embeddings (off by default in Simple mode; degrades to BM25).
 if _have("onnxruntime"):
@@ -183,22 +211,44 @@ for _maybe in ("jinja2", "aiofiles"):
 hiddenimports += collect_submodules("pydantic")
 hiddenimports += ["pydantic_core"]
 
-# MLX inference graph (Apple Silicon).
-if sys.platform == "darwin":
+# MLX inference graph (Apple Silicon ONLY) + its tokenizer stack.
+if IS_MAC:
     hiddenimports += collect_submodules("mlx")
     hiddenimports += collect_submodules("mlx_lm")
     hiddenimports += ["numpy"]
 
-# mlx_lm.load() builds the tokenizer via transformers.AutoTokenizer, which pulls
-# tokenizers + safetensors + sentencepiece. transformers uses lazy submodule
-# loading (_LazyModule) PyInstaller can't trace, so collect its submodules +
-# data. This is the TOKENIZER-only transformers (no torch) — ~100 MB. Without
-# it: "ModuleNotFoundError: No module named 'transformers'" at first chat.
-hiddenimports += collect_submodules("transformers")
-hiddenimports += ["tokenizers", "safetensors", "sentencepiece",
-                  "safetensors.numpy", "safetensors.mlx"]
-datas += collect_data_files("transformers")
-datas += collect_data_files("tokenizers")
+    # mlx_lm.load() builds the tokenizer via transformers.AutoTokenizer, which
+    # pulls tokenizers + safetensors + sentencepiece. transformers uses lazy
+    # submodule loading (_LazyModule) PyInstaller can't trace, so collect its
+    # submodules + data. TOKENIZER-only transformers (no torch) — ~100 MB.
+    # Without it: "ModuleNotFoundError: No module named 'transformers'" at first
+    # chat. This is MAC-ONLY: the Win/Linux GGUF runtime uses llama.cpp's
+    # built-in tokenizer + the GGUF's embedded chat template (no transformers),
+    # so we DON'T pay the ~100 MB transformers cost off Apple.
+    hiddenimports += collect_submodules("transformers")
+    hiddenimports += ["tokenizers", "safetensors", "sentencepiece",
+                      "safetensors.numpy", "safetensors.mlx"]
+    datas += collect_data_files("transformers")
+    datas += collect_data_files("tokenizers")
+
+# llama-cpp-python module graph (Win/Linux GGUF runtime; also mac if installed).
+if _have("llama_cpp"):
+    hiddenimports += collect_submodules("llama_cpp")
+    hiddenimports += ["numpy"]  # llama_cpp returns numpy arrays for logits/embeds
+
+# PyWebView platform backend (the shell role lives in this same frozen binary,
+# so the WebView glue must be bundled). PyInstaller ships a hook for pywebview,
+# but pin the per-OS backend module so it's never trimmed:
+#   * macOS : Cocoa/WKWebView via pyobjc  * Windows : EdgeChromium (WebView2)
+#   * Linux : GTK + WebKit2 (the AppImage also vendors the webkit2gtk .so, §linux)
+hiddenimports += collect_submodules("webview")
+if IS_WIN:
+    hiddenimports += ["webview.platforms.edgechromium", "clr_loader", "pythonnet"]
+elif IS_LINUX:
+    hiddenimports += ["webview.platforms.gtk", "gi", "gi.repository.Gtk",
+                      "gi.repository.WebKit2"]
+elif IS_MAC:
+    hiddenimports += ["webview.platforms.cocoa"]
 
 # Our code + the vendored inference engine — pull their whole graphs so nothing
 # dynamically imported is dropped.
@@ -261,22 +311,44 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Per-OS EXE knobs:
+#   * target_arch — only meaningful on macOS (assert the arm64 slice). On
+#     Win/Linux PyInstaller builds for the native runner arch (x64); leave None.
+#   * console=False — windowed/no-terminal on every OS (the double-click target).
+#     The Windows backend CHILD is spawned with CREATE_NO_WINDOW (win_job.py) so
+#     the re-exec'd uvicorn never flashes a console either.
+#   * upx — never on macOS (trips codesign/Gatekeeper). On Win/Linux UPX is an
+#     option to shrink the bundle but we keep it OFF by default (UPX is a top
+#     SmartScreen/AV false-positive trigger — UNSIGNED Windows is already AV-
+#     sensitive, so we don't add the UPX risk; build_exe.ps1 documents the knob).
+#   * icon — .icns on mac, .ico on Windows; Linux EXE takes no icon (the
+#     .desktop in the AppImage carries the PNG).
+_target_arch = "arm64" if IS_MAC else None
+if IS_WIN:
+    _exe_icon = str(REPO / "assets" / "icons" / "AliceAI.ico")
+elif IS_MAC:
+    _exe_icon = str(REPO / "assets" / "icons" / "AliceAI.icns")
+else:
+    _exe_icon = None
+_exe_icon = _exe_icon if (_exe_icon and os.path.exists(_exe_icon)) else None
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name="AliceAI",
+    name="AliceAI",            # PyInstaller appends .exe on Windows automatically
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,                 # UPX trips macOS codesign/Gatekeeper; never on mac
+    upx=False,                 # see note above — off on every OS by default
     console=False,             # windowed (no terminal) — the double-click target
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch="arm64",       # Apple Silicon; assert no x86_64 slice sneaks in
-    codesign_identity=None,    # ad-hoc signing happens in build_app.sh (inner-first)
+    target_arch=_target_arch,  # arm64 on mac; native (x64) on Win/Linux
+    codesign_identity=None,    # mac: ad-hoc sign in build_app.sh. UNSIGNED elsewhere.
     entitlements_file=None,
+    icon=_exe_icon,
 )
 
 coll = COLLECT(
@@ -289,31 +361,42 @@ coll = COLLECT(
     name="AliceAI",
 )
 
-# Let PyInstaller assemble the .app itself. Its BUNDLE step lays out a bundle
-# macOS codesign can SEAL: the frozen one-dir goes into Contents/Frameworks /
-# Contents/Resources (not flat under Contents/MacOS), so the inner-first
-# codesign in build_app.sh validates (the manual flat-MacOS layout made
-# codesign choke on .pyi/.py "subcomponents"). build_app.sh then ad-hoc-signs
-# every nested Mach-O + seals + .dmg's the result.
-_ICON = str((REPO / "assets" / "icons" / "AliceAI.icns"))
-app = BUNDLE(
-    coll,
-    name="AliceAI.app",
-    icon=_ICON if os.path.exists(_ICON) else None,
-    bundle_identifier="org.aliceprotocol.ai",
-    version="0.1.0",
-    info_plist={
-        "CFBundleName": "Alice",
-        "CFBundleDisplayName": "Alice",
-        "CFBundleExecutable": "AliceAI",
-        "CFBundleShortVersionString": "0.1.0",
-        "CFBundleVersion": "0.1.0",
-        "LSMinimumSystemVersion": "12.0",
-        "NSHighResolutionCapable": True,
-        "LSApplicationCategoryType": "public.app-category.productivity",
-        # Single-window GUI app (not a background agent).
-        "LSUIElement": False,
-        # No App Transport Security exception needed: inference is on-device;
-        # the only egress is the opt-in HF model download over system https.
-    },
-)
+# --------------------------------------------------------------------------- #
+# Final deliverable per OS:
+#   * macOS : a .app via BUNDLE (build_app.sh ad-hoc-signs + .dmg's it).
+#   * Win   : the COLLECT one-dir ``dist/AliceAI/`` (AliceAI.exe + _internal).
+#             build_exe.ps1 zips it (+ optional Inno Setup installer). No BUNDLE.
+#   * Linux : the COLLECT one-dir ``dist/AliceAI/``. build_appimage.sh stages it
+#             into an AppDir, vendors webkit2gtk/GTK, and runs appimagetool.
+# So BUNDLE runs ONLY on macOS; Win/Linux stop at COLLECT (the AppDir/zip is
+# assembled by the per-OS packaging script, not PyInstaller).
+# --------------------------------------------------------------------------- #
+if IS_MAC:
+    # Let PyInstaller assemble the .app itself. Its BUNDLE step lays out a bundle
+    # macOS codesign can SEAL: the frozen one-dir goes into Contents/Frameworks /
+    # Contents/Resources (not flat under Contents/MacOS), so the inner-first
+    # codesign in build_app.sh validates (the manual flat-MacOS layout made
+    # codesign choke on .pyi/.py "subcomponents"). build_app.sh then ad-hoc-signs
+    # every nested Mach-O + seals + .dmg's the result.
+    _ICON = str((REPO / "assets" / "icons" / "AliceAI.icns"))
+    app = BUNDLE(
+        coll,
+        name="AliceAI.app",
+        icon=_ICON if os.path.exists(_ICON) else None,
+        bundle_identifier="org.aliceprotocol.ai",
+        version="0.1.0",
+        info_plist={
+            "CFBundleName": "Alice",
+            "CFBundleDisplayName": "Alice",
+            "CFBundleExecutable": "AliceAI",
+            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleVersion": "0.1.0",
+            "LSMinimumSystemVersion": "12.0",
+            "NSHighResolutionCapable": True,
+            "LSApplicationCategoryType": "public.app-category.productivity",
+            # Single-window GUI app (not a background agent).
+            "LSUIElement": False,
+            # No App Transport Security exception needed: inference is on-device;
+            # the only egress is the opt-in HF model download over system https.
+        },
+    )

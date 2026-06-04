@@ -1,0 +1,248 @@
+# Alice AI — cross-OS UNSIGNED package build (M5/M6 + the 3-OS CI).
+#
+# Matrix: macos-14 (arm64) · windows-2022 (x64) · ubuntu-22.04 (x64). Each runner
+# natively builds ITS package via the per-OS script (no cross-compile, PLAN §7):
+#   * macOS   : packaging/macos/build_app.sh        → AliceAI.app + .dmg + .zip
+#   * Windows : packaging/windows/build_exe.ps1     → one-dir zip (+ optional Inno)
+#   * Linux   : packaging/linux/build_appimage.sh   → .AppImage
+#
+# The inference runtime swap (PLAN §6) is per-OS: macOS ships mlx (Apple Metal),
+# Windows/Linux ship llama-cpp-python (GGUF, CPU wheel by default). The app code
+# is OS-agnostic (the hardware probe picks the runtime family); CI just installs
+# the per-OS dependency set and the spec bundles the matching native wheel.
+#
+# BUILD-ONLY — this workflow does NOT create a release, code-sign, notarize, or
+# GPG-sign. Those are V-gated + offline (no certs in CI; UNSIGNED per V). The
+# artifacts are uploaded for download/inspection; the ed25519 update manifest is
+# the trust anchor later. A pip-audit step flags known-vulnerable deps.
+
+name: release (unsigned build)
+
+on:
+  push:
+    tags: ["v*"]            # tag-driven build (no auto release-create)
+  workflow_dispatch:
+    inputs:
+      alice_acp_ref:
+        description: "alice-acp git ref to build against (branch/tag/SHA)"
+        required: false
+        default: "prl-twpool"
+      windows_cuda:
+        description: "Windows: build the CUDA llama-cpp-python wheel"
+        type: boolean
+        default: false
+      build_inno:
+        description: "Windows: also build the Inno Setup installer"
+        type: boolean
+        default: false
+
+# Track-A inference engine repo (consumed read-only as the editable path dep).
+env:
+  ALICE_ACP_REPO: V-SK/alice-acp
+  ALICE_ACP_REF: ${{ github.event.inputs.alice_acp_ref || 'prl-twpool' }}
+  PYTHON_VERSION: "3.12"
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS-arm64
+            req: backend/requirements.txt          # mlx lock (existing)
+            artifact: alice-ai-macos-arm64
+          - os: windows-2022
+            label: Windows-x64
+            req: backend/requirements.win.txt       # llama-cpp-python (swap)
+            artifact: alice-ai-windows-x64
+          - os: ubuntu-22.04
+            label: Linux-x64
+            req: backend/requirements.linux.txt     # llama-cpp-python (swap)
+            artifact: alice-ai-linux-x64
+
+    steps:
+      # ----------------------------------------------------------------- #
+      # Checkout BOTH repos as siblings: alice-ai/ and alice-acp/ (the
+      # editable `-e ../../alice-acp` path dep resolves to ../alice-acp).
+      # ----------------------------------------------------------------- #
+      - name: Checkout alice-ai
+        uses: actions/checkout@v4
+        with:
+          path: alice-ai
+
+      - name: Checkout alice-acp (read-only dep)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ALICE_ACP_REPO }}
+          ref: ${{ env.ALICE_ACP_REF }}
+          path: alice-acp
+          # A PAT is needed if alice-acp is private; for public it's unused.
+          token: ${{ secrets.ALICE_ACP_TOKEN || github.token }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ----------------------------------------------------------------- #
+      # Linux: install the webkit2gtk/GTK BUILD-HOST libs so build_appimage.sh
+      # can vendor them into the AppDir (the user box needs none). Also FUSE +
+      # appimagetool prerequisites.
+      # ----------------------------------------------------------------- #
+      - name: Linux — webkit2gtk/GTK + AppImage prereqs
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-0 libwebkit2gtk-4.1-dev \
+            libgtk-3-0 gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
+            libgirepository1.0-dev libcairo2-dev pkg-config \
+            fuse libfuse2 file desktop-file-utils
+
+      # ----------------------------------------------------------------- #
+      # Dependencies — the per-OS set. macOS keeps its existing hash-pinned
+      # lock; Win/Linux compile + install their lock from the per-OS input
+      # (wheel hashes are per-platform — generated ON the runner, committed by
+      # CI for reproducibility). alice-acp is installed editable (no-deps so the
+      # hashed set governs the rest).
+      # ----------------------------------------------------------------- #
+      - name: Install deps (macOS — existing hash-pinned lock)
+        if: runner.os == 'macOS'
+        working-directory: alice-ai
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r backend/requirements.lock.txt
+          ( cd backend && python -m pip install --no-deps -e ../../alice-acp )
+
+      - name: Install deps (Windows — llama-cpp-python swap, compile+hash lock)
+        if: runner.os == 'Windows'
+        working-directory: alice-ai
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip uv
+          if ($env:WINDOWS_CUDA -eq 'true') {
+            $env:PIP_EXTRA_INDEX_URL = 'https://abetlen.github.io/llama-cpp-python/whl/cu124'
+          }
+          # cd backend FIRST so the input's `-e ../../alice-acp` path dep resolves.
+          cd backend
+          python -m uv pip compile --generate-hashes --no-header `
+            requirements.win.txt -o requirements.lock.win.txt
+          python -m pip install -e ..\..\alice-acp
+          python -m pip install --require-hashes -r requirements.lock.win.txt
+        env:
+          WINDOWS_CUDA: ${{ github.event.inputs.windows_cuda }}
+
+      - name: Install deps (Linux — llama-cpp-python swap, compile+hash lock)
+        if: runner.os == 'Linux'
+        working-directory: alice-ai
+        run: |
+          python -m pip install --upgrade pip uv
+          # cd backend FIRST so the input's `-e ../../alice-acp` path dep resolves.
+          cd backend
+          python -m uv pip compile --generate-hashes --no-header \
+            requirements.linux.txt -o requirements.lock.linux.txt
+          python -m pip install -e ../../alice-acp
+          python -m pip install --require-hashes -r requirements.lock.linux.txt
+
+      # ----------------------------------------------------------------- #
+      # LINT / SECURITY PROBE — cross-OS checks. Import smoke + the unit-test
+      # suite (model_manager, earn, simple-mode security) with the data-dir env
+      # the odysseus DB needs. The macOS-only live security probe (needs a
+      # resident MLX model) runs in the macOS leg of build_app.sh's smoke, not
+      # here — these are the OS-portable gates.
+      # ----------------------------------------------------------------- #
+      - name: Import smoke + spec validation
+        working-directory: alice-ai
+        run: |
+          python -c "import alice_acp.local_inference as li; print('alice_acp OK', li.__file__)"
+          python -c "import webview; print('pywebview import OK')"
+          python -c "import ast; ast.parse(open('backend/alice-backend.spec').read()); print('spec: valid Python')"
+          python -c "import sys; sys.path.insert(0,'shell'); from alice_shell import supervisor, paths, win_job; print('shell modules import OK')"
+
+      - name: Windows — Job Object self-check
+        if: runner.os == 'Windows'
+        working-directory: alice-ai
+        run: python -c "import sys; sys.path.insert(0,'shell'); from alice_shell.win_job import self_check; raise SystemExit(self_check())"
+
+      - name: Unit tests (with writable data dir for the odysseus DB)
+        working-directory: alice-ai
+        shell: bash
+        run: |
+          python -m pip install --quiet pytest
+          export ALICE_AI_DATA_DIR="${RUNNER_TEMP}/alice-citest"
+          mkdir -p "${ALICE_AI_DATA_DIR}"
+          export DATABASE_URL="sqlite:///${ALICE_AI_DATA_DIR}/app.db"
+          cd backend && PYTHONPATH="$(pwd)" python -m pytest tests/ -q
+
+      # ----------------------------------------------------------------- #
+      # pip-audit — flag known-vulnerable installed deps (non-blocking advisory:
+      # the build still produces an artifact, but the report is visible).
+      # ----------------------------------------------------------------- #
+      - name: pip-audit (advisory)
+        working-directory: alice-ai
+        shell: bash
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet pip-audit
+          python -m pip_audit --strict --desc || echo "::warning::pip-audit reported findings (advisory)"
+
+      # ----------------------------------------------------------------- #
+      # BUILD the per-OS package via its script (UNSIGNED).
+      # ----------------------------------------------------------------- #
+      - name: Build — macOS .app + .dmg (ad-hoc signed, no Apple cert)
+        if: runner.os == 'macOS'
+        working-directory: alice-ai
+        env:
+          SKIP_FREEZE: "0"
+        run: bash packaging/macos/build_app.sh
+
+      - name: Build — Windows one-dir zip (+ optional Inno)
+        if: runner.os == 'Windows'
+        working-directory: alice-ai
+        shell: pwsh
+        run: |
+          $extra = @()
+          if ($env:WINDOWS_CUDA -eq 'true') { $extra += '-Cuda' }
+          if ($env:BUILD_INNO -eq 'true')   { $extra += '-Inno' }
+          # Deps already installed above -> -SkipDeps (still freezes + packs).
+          pwsh packaging/windows/build_exe.ps1 -SkipDeps @extra
+        env:
+          WINDOWS_CUDA: ${{ github.event.inputs.windows_cuda }}
+          BUILD_INNO: ${{ github.event.inputs.build_inno }}
+
+      - name: Build — Linux AppImage (webkit2gtk vendored)
+        if: runner.os == 'Linux'
+        working-directory: alice-ai
+        run: bash packaging/linux/build_appimage.sh
+
+      # ----------------------------------------------------------------- #
+      # Upload the UNSIGNED artifact(s). No release-create (V-gated).
+      # ----------------------------------------------------------------- #
+      - name: Upload ${{ matrix.artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            alice-ai/dist/*.dmg
+            alice-ai/dist/*.zip
+            alice-ai/dist/*.AppImage
+            alice-ai/dist/*-setup.exe
+
+      # The generated per-OS hash-pinned lock (Win/Linux) — committed by V from
+      # the CI run for reproducible, hash-enforced release builds.
+      - name: Upload generated lock (Windows/Linux)
+        if: runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-lock
+          if-no-files-found: ignore
+          path: |
+            alice-ai/backend/requirements.lock.win.txt
+            alice-ai/backend/requirements.lock.linux.txt
