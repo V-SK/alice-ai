@@ -11,6 +11,20 @@ invariant).
 > Single source of truth: [`docs/PLAN.md`](docs/PLAN.md). Design depth lives in
 > [`docs/design/`](docs/design/).
 
+## Download
+
+**Latest: [v0.1.0](https://github.com/V-SK/alice-ai/releases/latest)** · download page with full verification steps → **https://aliceprotocol.org/ai**
+
+| Platform | File | Status |
+|---|---|---|
+| macOS (Apple Silicon) | `AliceAI-macos-arm64.dmg` / `.zip` | Stable |
+| Windows (x64) | `AliceAI-windows-x64.zip` | Beta |
+| Linux (x86_64) | `AliceAI-linux-x86_64.AppImage` | Beta |
+
+Windows and Linux are **beta** (built + security-checked, not yet tested on real hardware). The apps carry no OS-vendor certificate and are signed instead with our **ed25519** release key (`8P+XmZZFEsUHLmqeB62Xqr5GnwW5K9vf2sQHvRzfi5k=`) — verify every download against `SHA256SUMS` / `SHA256SUMS.sig`.
+
+> **Mining & rewards are not open yet** — credit-only (pending / 待发放). The in-app Earn entry links to the Alice Miner when available; the app never mines in the background and never moves funds.
+
 ## What it is, under the hood
 
 - A **fork of the MIT [`pewdiepie-archdaemon/odysseus`](https://github.com/pewdiepie-archdaemon/odysseus)**
@@ -31,16 +45,19 @@ alice-ai/
 ├── backend/
 │   ├── odysseus/                     # vendored fork (pinned SHA), trimmed
 │   ├── alice_ai/{model_manager,earn} # our code the fork imports
-│   └── requirements.txt              # deps incl. alice-acp (path dep)
+│   ├── vendor/alice_acp/             # vendored inference engine (self-contained builds)
+│   └── requirements.txt              # deps (odysseus + vendored alice_acp)
 ├── assets/{brand,fonts,icons}/       # copied from alice-miner (see NOTICE)
 ├── packaging/{macos,windows,linux}/  # per-OS build scripts
 ├── scripts/{vendor_odysseus.sh, dev_run.sh}
 └── .github/workflows/                # release matrix (macOS · Windows · Linux)
 ```
 
-**Dependency direction:** `alice-ai/backend` depends on `alice-acp` (our
-inference) as a normal Python package — we consume, never fork/copy it, so
-Track-A improvements (models, runtimes, GPU fixes) flow in for free.
+**Dependency direction:** the backend uses our **Track-A inference engine**
+(`alice_acp.local_inference`), vendored as a pinned snapshot under
+`backend/vendor/alice_acp/` so release builds are fully self-contained. We
+re-vendor rather than fork, so Track-A improvements (models, runtimes, GPU
+fixes) flow in.
 
 ## The shared `~/.alice` contract
 
@@ -55,16 +72,17 @@ contract between the three clients — public-only JSON. Alice AI treats it
 # 1. Vendor the odysseus fork (clones + pins + trims), if not already populated.
 scripts/vendor_odysseus.sh
 
-# 2. Create the dev venv and install deps (alice-acp path dep + odysseus deps).
+# 2. Create the dev venv and install deps (odysseus + vendored alice_acp).
 scripts/setup_dev_env.sh        # creates .venv, installs backend/requirements.txt
 
 # 3. Smoke: imports resolve.
 .venv/bin/python -c "import alice_acp.local_inference; print('local_inference OK')"
 ```
 
-> Status: **M0** (scaffold + vendored odysseus + alice-acp wired). The shell,
-> in-proc inference router, Model Manager, brand reskin, and packaging land in
-> later milestones (see `docs/PLAN.md` §5).
+> Status: **Released** — v0.1.0 ships for macOS (stable) and Windows/Linux
+> (beta). All milestones built (M0–M8: native shell, in-proc inference router,
+> Model Manager, brand reskin, per-OS packaging, earn-bridge, security
+> hardening); see [`docs/PLAN.md`](docs/PLAN.md) for the design.
 
 ## License
 
