@@ -30,7 +30,22 @@
 (function () {
   'use strict';
 
-  /* ----------------------------- i18n ------------------------------------ */
+  /* ----------------------------- i18n ------------------------------------ *
+   * HOW TO ADD A LANGUAGE: (1) add its code to LANGS below (code + short
+   * native label for the switcher), then (2) add a `<code>: '…'` entry to
+   * EVERY string in STR. The switcher, persistence and live re-render all key
+   * off LANGS automatically — no other code changes. `en` is the fallback for
+   * any string a language is missing, so a partial dict still renders.
+   * (Brand rule: model display names — "Alice Lite/Alice/Alice Pro/Alice RP"
+   * — and the product word "Alice" itself are NEVER translated.)
+   * ----------------------------------------------------------------------- */
+  var LANGS = [
+    { code: 'en', label: 'EN' },
+    { code: 'zh', label: '中' },
+    // Future, e.g.:  { code: 'zh-Hant', label: '繁' },  { code: 'ja', label: '日' },  { code: 'ko', label: '한' }
+  ];
+  var DEFAULT_LANG = 'en';
+
   var STR = {
     'setup.title':   { en: "Hi, I'm Alice", zh: '你好，我是 Alice' },
     'setup.sub':     { en: 'A private AI that runs on your own computer — free, offline, yours.',
@@ -53,6 +68,8 @@
     'chat.subtitle': { en: 'Runs on your computer · Fully private · Free forever',
                        zh: '在本机运行 · 完全私密 · 永久免费' },
     'chat.placeholder': { en: 'Message Alice…', zh: '写点什么…' },
+    'chat.input.aria': { en: 'Message Alice', zh: '给 Alice 发消息' },
+    'chat.send':     { en: 'Send', zh: '发送' },
     'chat.note':     { en: 'Alice runs on this device. No telemetry, no cloud — chats stay on your computer.',
                        zh: 'Alice 在本机运行。无遥测、无云端——聊天记录只保留在你的电脑上。' },
     'chat.private':  { en: 'Private · on-device', zh: '本地 · 私密' },
@@ -61,6 +78,9 @@
     'chat.newchat':  { en: 'New chat', zh: '新对话' },
     'chat.settings': { en: 'Settings', zh: '设置' },
     'chat.error':    { en: 'Something went wrong. Please try again.', zh: '出错了，请重试。' },
+    'lang.label':    { en: 'Language', zh: '语言' },
+    'lang.switch':   { en: 'Switch language', zh: '切换语言' },
+    'common.close':  { en: 'Close', zh: '关闭' },
     'set.title':     { en: 'Settings', zh: '设置' },
     'set.model':     { en: 'Model', zh: '模型' },
     'set.context':   { en: 'Context length', zh: '上下文长度' },
@@ -88,18 +108,73 @@
     'common.copied': { en: 'Copied', zh: '已复制' },
   };
 
+  function isLang(code) {
+    for (var i = 0; i < LANGS.length; i++) if (LANGS[i].code === code) return true;
+    return false;
+  }
   var _lang = (function () {
     try {
       var saved = localStorage.getItem('alice-lang');
-      if (saved === 'en' || saved === 'zh') return saved;
+      if (saved && isLang(saved)) return saved;       // user's explicit choice always wins
     } catch (_) {}
-    var nav = (navigator.language || 'en').toLowerCase();
-    return nav.indexOf('zh') === 0 ? 'zh' : 'en';
+    var nav = (navigator.language || DEFAULT_LANG).toLowerCase();
+    if (nav.indexOf('zh') === 0 && isLang('zh')) return 'zh';   // auto-detect on first run
+    return DEFAULT_LANG;
   })();
   function t(key) {
     var e = STR[key];
     if (!e) return key;
-    return e[_lang] != null ? e[_lang] : e.en;
+    if (e[_lang] != null) return e[_lang];
+    return e.en != null ? e.en : key;
+  }
+  function getLang() { return _lang; }
+  function setLang(code) {
+    if (!isLang(code) || code === _lang) return;
+    _lang = code;
+    try { localStorage.setItem('alice-lang', code); } catch (_) {}
+    document.documentElement.setAttribute('lang', code);
+    rerenderAll();
+  }
+  // Expose a minimal i18n handle for the OTHER classic IIFE (alice-md.js) to
+  // localize the code-block "Copy" label — a runtime global lookup, same
+  // pattern as window.AliceMD / window.hljs. No import graph is introduced.
+  window.AliceI18N = { t: t, lang: getLang };
+
+  // Re-render every piece of visible chrome in the current language. Cheap:
+  // the setup card / chat shell / open settings sheet are all rebuilt from the
+  // in-memory state, so switching language is instant and loses nothing.
+  function rerenderAll() {
+    window.AliceI18N.lang = getLang;
+
+    var setupVisible = el('setup') && !el('setup').classList.contains('hidden');
+    if (setupVisible && _lastSetupRec) {
+      // (A download in progress holds its own DOM under #dlMount; we only
+      //  rebuild the static setup card when no transfer is mid-flight.)
+      if (!el('dlMount') || !el('dlMount').firstChild) renderSetup(_lastSetupRec);
+    }
+
+    var chatVisible = el('chat') && !el('chat').classList.contains('hidden');
+    if (chatVisible) {
+      // Preserve the in-progress composer draft across the rebuild.
+      var prevTa = el('composerInput');
+      var draft = prevTa ? prevTa.value : '';
+      // A live stream writes into a detached bubble if we rebuild the thread;
+      // stop it cleanly first (its partial text is already in state.messages).
+      if (state.streaming) stopStream();
+      buildChatShell();
+      renderThread();
+      updateModelPill();
+      var ta = el('composerInput');
+      if (ta) { ta.value = draft; autoGrow(); }
+    }
+
+    if (_settingsOpen) {
+      // close the stale settings overlay and reopen it freshly localized
+      var ov = document.querySelector('.overlay');
+      if (ov) ov.remove();
+      _settingsOpen = false;
+      openSettings();
+    }
   }
 
   /* --------------------------- API client -------------------------------- */
@@ -247,6 +322,7 @@
     lock: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg>",
     close: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>",
     check: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>",
+    globe: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18'/></svg>",
   };
 
   function toast(msg) {
@@ -267,6 +343,33 @@
     streaming: false,
     abort: null,
   };
+  // i18n re-render bookkeeping (set by the screens; read by rerenderAll()).
+  var _lastSetupRec = null;   // the model card the setup screen last rendered
+  var _settingsOpen = false;  // whether the settings sheet is currently open
+
+  /* ----------------------- language switcher control --------------------- *
+   * A compact on-brand "EN / 中" segmented toggle. Used in the chat header
+   * (near the gear) AND inside the settings sheet. Clicking a segment calls
+   * setLang(), which persists the choice and live re-renders all visible text.
+   */
+  function buildLangSwitch(extraClass) {
+    var seg = h('div', { class: 'lang-seg' + (extraClass ? ' ' + extraClass : ''),
+                         role: 'group', 'aria-label': t('lang.switch') });
+    LANGS.forEach(function (L) {
+      var on = L.code === _lang;
+      var b = h('button', {
+        class: 'lang-opt' + (on ? ' on' : ''),
+        type: 'button',
+        text: L.label,
+        title: t('lang.switch'),
+        'aria-pressed': on ? 'true' : 'false',
+        'data-lang': L.code,
+      });
+      b.addEventListener('click', function () { setLang(L.code); });
+      seg.appendChild(b);
+    });
+    return seg;
+  }
 
   function activeModelKey() { return state.current ? state.current.id : 'lite'; }
   function chatModelName() {
@@ -291,11 +394,15 @@
 
   /* ============================ SETUP SCREEN ============================== */
   function renderSetup(rec) {
+    _lastSetupRec = rec;
     var root = el('setup');
     root.innerHTML = '';
     var dev = state.device || {};
     var devLabel = [dev.label, dev.accelerator, (dev.memory_gb ? dev.memory_gb + ' GB' : '')]
       .filter(Boolean).join(' · ');
+
+    // language switcher, pinned top-right of the setup viewport
+    root.appendChild(buildLangSwitch('lang-seg-setup'));
 
     var card = h('div', { class: 'setup-card' });
     card.appendChild(h('div', { class: 'mark setup-mark', html: MARK_SVG }));
@@ -423,6 +530,7 @@
       h('span', { class: 'mark', html: IC.lock }),
       h('span', { text: t('chat.private') }),
     ]));
+    bar.appendChild(buildLangSwitch('lang-seg-bar'));
     var newBtn = h('button', { class: 'icon-btn', type: 'button', title: t('chat.newchat'), 'aria-label': t('chat.newchat'), html: IC.plus });
     newBtn.addEventListener('click', newChat);
     bar.appendChild(newBtn);
@@ -439,8 +547,8 @@
     // composer
     var cwrap = h('div', { class: 'composer-wrap' });
     var comp = h('div', { class: 'composer' });
-    var ta = h('textarea', { id: 'composerInput', rows: '1', placeholder: t('chat.placeholder'), 'aria-label': 'Message Alice' });
-    var sendBtn = h('button', { class: 'send-btn', id: 'sendBtn', type: 'button', 'aria-label': 'Send', html: IC.send });
+    var ta = h('textarea', { id: 'composerInput', rows: '1', placeholder: t('chat.placeholder'), 'aria-label': t('chat.input.aria') });
+    var sendBtn = h('button', { class: 'send-btn', id: 'sendBtn', type: 'button', 'aria-label': t('chat.send'), html: IC.send });
     comp.appendChild(ta); comp.appendChild(sendBtn);
     cwrap.appendChild(comp);
     cwrap.appendChild(h('div', { class: 'composer-note', text: t('chat.note') }));
@@ -638,7 +746,7 @@
     var send = el('sendBtn');
     if (!send) return;
     send.innerHTML = on ? IC.stop : IC.send;
-    send.setAttribute('aria-label', on ? t('chat.stop') : 'Send');
+    send.setAttribute('aria-label', on ? t('chat.stop') : t('chat.send'));
     send.disabled = false;
     if (!on) autoGrow();
   }
@@ -686,19 +794,29 @@
 
   /* ============================ SETTINGS ================================== */
   function openSettings() {
-    var overlay = h('div', { class: 'overlay' });
+    _settingsOpen = true;
+    var overlay = h('div', { class: 'overlay', 'data-settings': '1' });
     overlay.addEventListener('click', function (e) { if (e.target === overlay) closeOverlay(overlay); });
 
     var sheet = h('div', { class: 'sheet' });
     var head = h('div', { class: 'sheet-head' }, [
       h('span', { class: 'sheet-title', text: t('set.title') }),
       (function () {
-        var b = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', html: IC.close });
+        var b = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('common.close'), html: IC.close });
         b.addEventListener('click', function () { closeOverlay(overlay); });
         return b;
       })(),
     ]);
     sheet.appendChild(head);
+
+    // --- language ---
+    var langSec = h('div', { class: 'sheet-section' });
+    langSec.appendChild(h('div', { class: 'sheet-label', text: t('lang.label') }));
+    var langRow = h('div', { class: 'toggle-row' });
+    langRow.appendChild(h('div', { class: 'sheet-desc', text: t('lang.switch') }));
+    langRow.appendChild(buildLangSwitch('lang-seg-sheet'));
+    langSec.appendChild(langRow);
+    sheet.appendChild(langSec);
 
     // --- model picker ---
     var modelSec = h('div', { class: 'sheet-section' });
@@ -801,6 +919,7 @@
   }
 
   function closeOverlay(overlay) {
+    if (overlay.getAttribute && overlay.getAttribute('data-settings') === '1') _settingsOpen = false;
     overlay.style.animation = 'fade .15s ease reverse forwards';
     setTimeout(function () { overlay.remove(); }, 140);
   }
@@ -969,6 +1088,8 @@
   }
 
   function boot() {
+    // Reflect the resolved UI language onto <html lang> from the first paint.
+    document.documentElement.setAttribute('lang', _lang);
     // Kick off the independent reads in parallel.
     var pDevice = API.device().catch(function () { return null; });
     var pModels = refreshModels().catch(function () { return []; });
@@ -991,9 +1112,18 @@
         return;
       }
 
-      // No current model — first run. Pick the recommended tier; if its state is
-      // already "ready" we can load straight into chat without a download.
-      var target = rec || pickFallbackRecommend();
+      // No current model — first run. Per the product spec the DEFAULT is Alice
+      // Lite (small, instant start) regardless of device tier; bigger tiers (incl.
+      // the device-recommended one) stay reachable via "Choose a different model".
+      // And ALWAYS prefer an already-downloaded model so we never force a fresh
+      // multi-GB download when something usable is already on disk.
+      var readyModels = state.models.filter(function (m) { return m.state === 'ready'; });
+      var target;
+      if (readyModels.length) {
+        target = readyModels.filter(function (m) { return m.id === 'lite'; })[0] || readyModels[0];
+      } else {
+        target = findModel('lite') || rec || pickFallbackRecommend();
+      }
       var matching = findModel(target.id);
       if (matching && matching.state === 'ready') {
         // already downloaded — load and go (no download UI needed)
