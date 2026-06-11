@@ -878,6 +878,18 @@ try:
 except Exception as _alice_mm_exc:  # noqa: BLE001
     logger.warning("Alice Model Manager routes registration failed: %s", _alice_mm_exc, exc_info=True)
 
+# Lean curated agent (code + files + web): POST /alice/agent_stream. Mounted
+# UNCONDITIONALLY (not behind _ALICE_MOUNT_PRIVILEGED) — it self-gates per
+# request on agent_mode_enabled() and 403s when Agent mode is off, and its
+# curated six tools execute in-process (no privileged router / MCP server / app
+# restart needed). Rides the same /alice/* local-token middleware for free.
+try:
+    from alice_agent import router as _alice_agent_router
+    app.include_router(_alice_agent_router)
+    logger.info("Alice curated agent route registered (/alice/agent_stream)")
+except Exception as _alice_agent_exc:  # noqa: BLE001
+    logger.warning("Alice curated agent route registration failed: %s", _alice_agent_exc, exc_info=True)
+
 # Earn bridge routes (M7 — PLAN §5 / design 04 §5.1): /alice/earn/status,
 # /open-miner, /download-url. Read-only Miner bridge over the shared
 # ~/.alice/identity.json (NEVER written here) + a fire-and-forget launch of the

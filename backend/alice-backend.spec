@@ -75,8 +75,15 @@ def _have(mod: str) -> bool:
 # "too many values to unpack"). The walker prunes caches/mutable-runtime/test
 # dirs so the bundle stays lean and never ships a stale dev sqlite.
 # --------------------------------------------------------------------------- #
-_PRUNE_DIRS = {"__pycache__", ".git", "tests", "node_modules",
-               "dist", "build", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+# Caches / VCS junk: pruned in EVERY tree (never shippable anywhere).
+_PRUNE_ALWAYS = {"__pycache__", ".git", ".pytest_cache", ".mypy_cache",
+                 ".ruff_cache", "node_modules"}
+# Build-artifact / test dir NAMES pruned ONLY in Python source trees — NEVER
+# under static/, where 'build' is a REAL shipped frontend dir
+# (static/js/editor/build/). A 404 there breaks app.js's ES-module import graph,
+# so the whole chat UI never initializes → blank/stuck window. Ship frontend
+# assets verbatim.
+_PRUNE_SOURCE_ONLY = {"tests", "dist", "build"}
 
 
 def _tree(src_dir: Path, prefix: str, *, prune_top=()):
@@ -90,10 +97,15 @@ def _tree(src_dir: Path, prefix: str, *, prune_top=()):
     prune_top = set(prune_top)
     for root, dirs, files in os.walk(src_dir):
         rel_root = Path(root).relative_to(src_dir)
-        # Prune cache/test dirs anywhere, and named top-level dirs.
+        # Under static/ (the shipped frontend) only caches/VCS are pruned — NOT
+        # build/dist/tests, which are real frontend dirs there (esp.
+        # static/js/editor/build/). Elsewhere (Python source) prune both. Always
+        # honour the named top-level prune_top.
+        in_static = "static" in rel_root.parts
+        _prune = _PRUNE_ALWAYS if in_static else (_PRUNE_ALWAYS | _PRUNE_SOURCE_ONLY)
         dirs[:] = [
             d for d in dirs
-            if d not in _PRUNE_DIRS
+            if d not in _prune
             and not (rel_root == Path(".") and d in prune_top)
         ]
         for f in files:
@@ -112,6 +124,29 @@ datas = []
 # Skip the mutable ``data/`` dir (runtime sqlite/settings — recreated under
 # ~/.alice/ai-data at first run) and the .github dir.
 datas += _tree(ODYSSEUS, "backend/odysseus", prune_top=("data", ".github"))
+
+# Regression guard: the LEAN Alice chat frontend must ship INTACT. The UI is a
+# self-contained set — index.html + lean/*.{js,css} + the vendored highlighter;
+# if any is missing the window renders blank. Fail the BUILD loudly rather than
+# ship a blank app. (This replaced the old odysseus 100-module frontend, whose
+# circular ES-module graph + sync-init freeze white-screened EVERY engine.)
+_bundled_rel = {
+    (dest.replace(os.sep, "/") + "/" + os.path.basename(src))
+    for src, dest in datas
+}
+_REQUIRED_FRONTEND = (
+    "backend/odysseus/static/index.html",
+    "backend/odysseus/static/lean/alice-lean.js",
+    "backend/odysseus/static/lean/alice-md.js",
+    "backend/odysseus/static/lean/alice-chat.css",
+    "backend/odysseus/static/lib/highlight.min.js",
+)
+_missing_fe = [p for p in _REQUIRED_FRONTEND if p not in _bundled_rel]
+if _missing_fe:
+    raise SystemExit(
+        "alice-backend.spec: required lean-frontend files missing from the bundle: "
+        f"{_missing_fe}"
+    )
 
 # Our alice_ai package (model_manager + earn) → <bundle>/backend/alice_ai/.
 datas += _tree(ALICE_AI_PKG, "backend/alice_ai")
@@ -387,13 +422,13 @@ if IS_MAC:
         name="AliceAI.app",
         icon=_ICON if os.path.exists(_ICON) else None,
         bundle_identifier="org.aliceprotocol.ai",
-        version="0.1.0",
+        version="0.1.1",
         info_plist={
             "CFBundleName": "Alice",
             "CFBundleDisplayName": "Alice",
             "CFBundleExecutable": "AliceAI",
-            "CFBundleShortVersionString": "0.1.0",
-            "CFBundleVersion": "0.1.0",
+            "CFBundleShortVersionString": "0.1.1",
+            "CFBundleVersion": "0.1.1",
             "LSMinimumSystemVersion": "12.0",
             "NSHighResolutionCapable": True,
             "LSApplicationCategoryType": "public.app-category.productivity",

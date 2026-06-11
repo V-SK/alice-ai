@@ -106,6 +106,20 @@
     'risk.confirm':  { en: 'I understand, turn it on', zh: '我已了解，开启' },
     'common.copy':   { en: 'Copy', zh: '复制' },
     'common.copied': { en: 'Copied', zh: '已复制' },
+    // Agent mode (tool-using turns). Tool LABELS below are localized UI chrome;
+    // they are NOT model/brand names so translating them is fine.
+    'agent.badge':   { en: 'Agent', zh: '智能体' },
+    'agent.indicator': { en: 'Agent mode · Alice can use tools', zh: '智能体模式 · Alice 可使用工具' },
+    'agent.running': { en: 'Running…', zh: '正在运行…' },
+    'agent.ok':      { en: 'Done', zh: '完成' },
+    'agent.failed':  { en: 'Failed', zh: '失败' },
+    'agent.working': { en: 'Working…', zh: '处理中…' },
+    'agent.tool.bash':       { en: 'Shell', zh: '终端命令' },
+    'agent.tool.python':     { en: 'Python', zh: 'Python' },
+    'agent.tool.read_file':  { en: 'Read file', zh: '读取文件' },
+    'agent.tool.write_file': { en: 'Write file', zh: '写入文件' },
+    'agent.tool.web_search': { en: 'Web search', zh: '联网搜索' },
+    'agent.tool.web_fetch':  { en: 'Open page', zh: '抓取网页' },
   };
 
   function isLang(code) {
@@ -164,6 +178,7 @@
       buildChatShell();
       renderThread();
       updateModelPill();
+      updateAgentIndicator();
       var ta = el('composerInput');
       if (ta) { ta.value = draft; autoGrow(); }
     }
@@ -197,7 +212,9 @@
     },
     device: function () { return API.getJSON('/alice/device'); },
     recommend: function () { return API.getJSON('/alice/recommend'); },
-    models: function () { return API.getJSON('/alice/models'); },
+    // ?rp=1 surfaces the dedicated roleplay line (Alice RP / Alice RP Lite)
+    // alongside the general tiers, so the model picker can offer them.
+    models: function () { return API.getJSON('/alice/models?rp=1'); },
     current: function () { return API.getJSON('/alice/current'); },
     mode: function () { return API.getJSON('/alice/mode'); },
     setMode: function (on, ack) { return API.postJSON('/alice/mode', { agent_mode: on, risk_acknowledged: ack }); },
@@ -291,6 +308,53 @@
         });
       });
     },
+
+    // Curated agent stream (code+files+web). POSTs the transcript to
+    // /alice/agent_stream and dispatches each structured event to on[type]:
+    //   delta{text} assistant_text{text} tool_start{tool,input}
+    //   tool_output{tool,output,exit_code,ok} agent_step{round} done error{message}
+    // Resolves on terminal [DONE]; rejects on 403 (agent mode off) / transport.
+    agentStream: function (messages, on, signal) {
+      return new Promise(function (resolve, reject) {
+        fetch('/alice/agent_stream', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: messages }),
+          signal: signal,
+        }).then(function (resp) {
+          if (resp.status === 403) { reject(new Error('AGENT_MODE_OFF')); return; }
+          if (!resp.ok || !resp.body) { reject(new Error('agent failed: ' + resp.status)); return; }
+          var reader = resp.body.getReader();
+          var dec = new TextDecoder();
+          var buf = '';
+          (function pump() {
+            return reader.read().then(function (res) {
+              if (res.done) { resolve(); return; }
+              buf += dec.decode(res.value, { stream: true });
+              var parts = buf.split('\n');
+              buf = parts.pop();
+              for (var i = 0; i < parts.length; i++) {
+                var line = parts[i].trim();
+                if (line.indexOf('data:') !== 0) continue;
+                var data = line.slice(5).trim();
+                if (data === '[DONE]') { resolve(); return; }
+                try {
+                  var ev = JSON.parse(data);
+                  if (ev && ev.type && on && on[ev.type]) on[ev.type](ev);
+                } catch (_) {}
+              }
+              return pump();
+            });
+          })().catch(function (err) {
+            if (err && err.name === 'AbortError') resolve();
+            else reject(err);
+          });
+        }).catch(function (err) {
+          if (err && err.name === 'AbortError') resolve();
+          else reject(err);
+        });
+      });
+    },
   };
 
   /* ------------------------------ helpers -------------------------------- */
@@ -323,6 +387,9 @@
     close: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'><path d='M18 6 6 18M6 6l12 12'/></svg>",
     check: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>",
     globe: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18'/></svg>",
+    term: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4' width='18' height='16' rx='2'/><path d='M7 9l3 3-3 3M13 15h4'/></svg>",
+    code: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M8 9l-3 3 3 3M16 9l3 3-3 3M13 7l-2 10'/></svg>",
+    file: "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/><path d='M14 3v5h5'/></svg>",
   };
 
   function toast(msg) {
@@ -525,6 +592,13 @@
       h('span', { id: 'modelPillName', text: activeDisplayName() }),
     ]);
     bar.appendChild(pill);
+    // Agent-mode badge — visible only while Agent mode is on, so the user always
+    // knows when Alice can reach for tools. Toggled by updateAgentIndicator().
+    var agentBadge = h('span', { class: 'agent-badge hidden', id: 'agentBadge', title: t('agent.indicator') }, [
+      h('span', { class: 'mark', html: IC.term }),
+      h('span', { text: t('agent.badge') }),
+    ]);
+    bar.appendChild(agentBadge);
     bar.appendChild(h('span', { class: 'tb-spacer' }));
     bar.appendChild(h('span', { class: 'privacy-tag' }, [
       h('span', { class: 'mark', html: IC.lock }),
@@ -614,7 +688,7 @@
       return;
     }
     state.messages.forEach(function (m) {
-      thread.appendChild(renderMessage(m.role, m.content));
+      thread.appendChild(renderMessage(m));
     });
   }
 
@@ -626,19 +700,69 @@
     return hero;
   }
 
-  function renderMessage(role, content) {
+  function renderMessage(m) {
+    var role = m.role, content = m.content;
     var msg = h('div', { class: 'msg ' + role });
     if (role === 'assistant') {
       msg.appendChild(h('div', { class: 'avatar mark', html: MARK_SVG }));
-      var bubble = h('div', { class: 'bubble md' });
-      bubble.innerHTML = window.AliceMD ? window.AliceMD.render(content) : escapeText(content);
-      highlightWithin(bubble);
-      msg.appendChild(bubble);
+      if (m.steps && m.steps.length) {
+        // Agent turn: interleaved prose bubbles + tool cards (rebuilt from the
+        // persisted step list, so restore + language-switch reproduce it).
+        var wrap = h('div', { class: 'agent-turn' });
+        m.steps.forEach(function (s) {
+          var node = renderStep(s);
+          if (node) wrap.appendChild(node);
+        });
+        msg.appendChild(wrap);
+      } else {
+        var bubble = h('div', { class: 'bubble md' });
+        bubble.innerHTML = window.AliceMD ? window.AliceMD.render(content) : escapeText(content);
+        highlightWithin(bubble);
+        msg.appendChild(bubble);
+      }
     } else {
       // user content as plain text (CSS preserves whitespace)
       msg.appendChild(h('div', { class: 'bubble', text: content }));
     }
     return msg;
+  }
+
+  // ---- agent-mode rendering (tool cards) --------------------------------- //
+  function isAgentMode() { return !!(state.mode && state.mode.agent_mode); }
+  function toolLabel(tool) {
+    var k = 'agent.tool.' + tool;
+    return STR[k] ? t(k) : tool;
+  }
+  function toolIcon(tool) {
+    if (tool === 'bash') return IC.term;
+    if (tool === 'python') return IC.code;
+    if (tool === 'read_file' || tool === 'write_file') return IC.file;
+    return IC.globe; // web_search / web_fetch
+  }
+  function renderStep(s) {
+    if (!s) return null;
+    if (s.kind === 'tool') return renderToolCard(s);
+    var text = s.text || '';
+    if (!text) return null;
+    var bubble = h('div', { class: 'bubble md' });
+    bubble.innerHTML = window.AliceMD ? window.AliceMD.render(text) : escapeText(text);
+    highlightWithin(bubble);
+    return bubble;
+  }
+  function renderToolCard(s) {
+    var cls = 'tool-card ' + (s.running ? 'running' : (s.ok ? 'ok' : 'fail'));
+    var card = h('div', { class: cls });
+    var head = h('div', { class: 'tool-head' }, [
+      h('span', { class: 'tool-ic mark', html: toolIcon(s.tool) }),
+      h('span', { class: 'tool-name', text: toolLabel(s.tool) }),
+      h('span', { class: 'tool-status', text: s.running ? t('agent.running') : (s.ok ? t('agent.ok') : t('agent.failed')) }),
+    ]);
+    card.appendChild(head);
+    if (s.input) card.appendChild(h('div', { class: 'tool-input', text: s.input }));
+    if (s.output != null && s.output !== '') {
+      card.appendChild(h('pre', { class: 'tool-output' }, [ h('code', { text: s.output }) ]));
+    }
+    return card;
   }
   function escapeText(s) {
     var d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML;
@@ -673,10 +797,15 @@
     // append user bubble (rebuild hero -> messages on first send)
     var thread = el('thread');
     if (state.messages.length === 1) thread.innerHTML = '';
-    thread.appendChild(renderMessage('user', text));
+    thread.appendChild(renderMessage({ role: 'user', content: text }));
     scrollToBottom(true);
 
-    // assistant placeholder
+    if (isAgentMode()) sendAgentTurn(thread);
+    else sendChatTurn(thread);
+  }
+
+  // Plain chat turn: a single streamed assistant bubble via /v1/chat/completions.
+  function sendChatTurn(thread) {
     var assistant = { role: 'assistant', content: '' };
     state.messages.push(assistant);
     var msgNode = h('div', { class: 'msg assistant' }, [
@@ -721,6 +850,117 @@
         } else {
           assistant.content = acc;
         }
+        finishStream();
+      });
+  }
+
+  // Agent turn: interleaved prose bubbles + live tool cards via /alice/agent_stream.
+  function sendAgentTurn(thread) {
+    var assistant = { role: 'assistant', content: '', steps: [] };
+    state.messages.push(assistant);
+    var msgNode = h('div', { class: 'msg assistant' }, [
+      h('div', { class: 'avatar mark', html: MARK_SVG }),
+    ]);
+    var wrap = h('div', { class: 'agent-turn' });
+    msgNode.appendChild(wrap);
+    var thinking = h('div', { class: 'agent-thinking', text: t('agent.working') });
+    wrap.appendChild(thinking);
+    thread.appendChild(msgNode);
+    scrollToBottom(true);
+
+    setStreaming(true);
+    state.abort = new AbortController();
+
+    var steps = assistant.steps;
+    var curTextNode = null, curTextStep = null, liveRaw = '';
+    var curToolNode = null, curToolStep = null;
+    var pending = false;
+
+    function clearThinking() {
+      if (thinking && thinking.parentNode) thinking.parentNode.removeChild(thinking);
+      thinking = null;
+    }
+    function ensureTextNode() {
+      if (curTextNode) return;
+      clearThinking();
+      curTextStep = { kind: 'text', text: '' };
+      steps.push(curTextStep);
+      curTextNode = h('div', { class: 'bubble md caret' });
+      wrap.appendChild(curTextNode);
+    }
+    function flushText() {
+      pending = false;
+      if (!curTextNode) return;
+      curTextStep.text = liveRaw;
+      curTextNode.innerHTML = window.AliceMD ? window.AliceMD.render(liveRaw) : escapeText(liveRaw);
+      curTextNode.classList.add('caret');
+      scrollToBottom(false);
+    }
+    function endRound() { curTextNode = null; curTextStep = null; liveRaw = ''; }
+
+    var handlers = {
+      delta: function (ev) {
+        ensureTextNode();
+        liveRaw += (ev.text || '');
+        if (!pending) { pending = true; requestAnimationFrame(flushText); }
+      },
+      assistant_text: function (ev) {
+        var clean = ev.text || '';
+        if (clean) {
+          ensureTextNode();
+          curTextStep.text = clean;
+          curTextNode.innerHTML = window.AliceMD ? window.AliceMD.render(clean) : escapeText(clean);
+          curTextNode.classList.remove('caret');
+          highlightWithin(curTextNode);
+          assistant.content = clean;
+        } else if (curTextNode) {
+          // pure tool round, no prose — drop the empty text node + step
+          if (curTextNode.parentNode) curTextNode.parentNode.removeChild(curTextNode);
+          var idx = steps.indexOf(curTextStep);
+          if (idx >= 0) steps.splice(idx, 1);
+        }
+        endRound();
+      },
+      tool_start: function (ev) {
+        clearThinking();
+        curToolStep = { kind: 'tool', tool: ev.tool, input: ev.input || '', output: '', running: true, ok: false };
+        steps.push(curToolStep);
+        curToolNode = renderToolCard(curToolStep);
+        wrap.appendChild(curToolNode);
+        scrollToBottom(false);
+      },
+      tool_output: function (ev) {
+        if (!curToolStep) return;
+        curToolStep.running = false;
+        curToolStep.ok = !!ev.ok;
+        curToolStep.output = ev.output || '';
+        curToolStep.exit_code = ev.exit_code;
+        var nc = renderToolCard(curToolStep);
+        if (curToolNode && curToolNode.parentNode) curToolNode.parentNode.replaceChild(nc, curToolNode);
+        curToolNode = nc; curToolStep = null;
+        scrollToBottom(false);
+      },
+      agent_step: function () { endRound(); },
+      error: function (ev) {
+        clearThinking();
+        wrap.appendChild(h('p', { class: 'dl-err', text: ev.message || t('chat.error') }));
+      },
+      done: function () {},
+    };
+
+    API.agentStream(apiMessages(), handlers, state.abort.signal)
+      .then(function () {
+        clearThinking();
+        if (curTextNode) curTextNode.classList.remove('caret');
+        finishStream();
+      })
+      .catch(function (err) {
+        clearThinking();
+        if (curTextNode) curTextNode.classList.remove('caret');
+        var m = (err && err.message === 'AGENT_MODE_OFF')
+          ? t('set.agent.desc')
+          : (t('chat.error') + ' (' + ((err && err.message) || 'error') + ')');
+        wrap.appendChild(h('p', { class: 'dl-err', text: m }));
         finishStream();
       });
   }
@@ -784,12 +1024,17 @@
     restore();
     renderThread();
     updateModelPill();
+    updateAgentIndicator();
     var ta = el('composerInput');
     if (ta) { autoGrow(); ta.focus(); }
   }
   function updateModelPill() {
     var n = el('modelPillName');
     if (n) n.textContent = activeDisplayName();
+  }
+  function updateAgentIndicator() {
+    var b = el('agentBadge');
+    if (b) b.classList.toggle('hidden', !isAgentMode());
   }
 
   /* ============================ SETTINGS ================================== */
@@ -864,6 +1109,7 @@
               state.mode = res.body;
               swInput.checked = !!res.body.agent_mode;
               agentNote.textContent = res.body.restart_required_for_full ? t('set.agent.restart') : '';
+              updateAgentIndicator();
             } else if (res.status === 409) {
               state.mode = res.body;
               agentNote.textContent = t('set.agent.locked');
@@ -874,7 +1120,7 @@
         });
       } else {
         API.setMode(false, false).then(function (res) {
-          if (res.ok) { state.mode = res.body; agentNote.textContent = ''; }
+          if (res.ok) { state.mode = res.body; agentNote.textContent = ''; updateAgentIndicator(); }
         });
       }
     });

@@ -406,6 +406,41 @@ def _count_tokens(tok, prompt) -> int:
         return 1
 
 
+def iter_text_segments(messages: list[dict], max_tokens: int) -> Iterator[str]:
+    """Yield RAW assistant text segments (no OpenAI framing) for the loaded runtime.
+
+    This is the bare token stream that sits behind ``_stream_chunks``. The lean
+    curated agent (``alice_agent.py``) consumes raw text so it can detect fenced
+    tool blocks mid-turn; ``_stream_chunks`` exists to wrap the same stream in
+    OpenAI ``chat.completion.chunk`` SSE for the plain-chat path. Kept as a
+    separate, tiny generator so the proven chat path stays untouched — the
+    runtime branching here intentionally mirrors ``_stream_chunks`` below.
+    """
+    eng = get_engine()
+    runtime = eng.runtime
+    if runtime == "mlx":
+        from mlx_lm import stream_generate
+
+        prompt, _ = _mlx_prompt_tokens(eng.loaded, messages)
+        model = eng.loaded._model  # noqa: SLF001
+        tok = eng.loaded._tokenizer  # noqa: SLF001
+        for resp in stream_generate(model, tok, prompt=prompt, max_tokens=max_tokens):
+            seg = getattr(resp, "text", "") or ""
+            if seg:
+                yield seg
+    elif runtime in ("gguf", "cuda", "cpu"):
+        llm = eng.loaded._llm  # noqa: SLF001
+        for ev in llm.create_chat_completion(
+            messages=messages, max_tokens=max_tokens, stream=True
+        ):
+            choice = (ev.get("choices") or [{}])[0]
+            seg = (choice.get("delta") or {}).get("content") or ""
+            if seg:
+                yield seg
+    else:
+        yield f"[alice_agent] unsupported runtime {runtime}"
+
+
 def _stream_chunks(messages: list[dict], max_tokens: int) -> Iterator[str]:
     """Yield OpenAI-compatible SSE lines for a streamed completion.
 

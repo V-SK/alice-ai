@@ -12,6 +12,7 @@ import collections
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
@@ -392,6 +393,21 @@ def _build_mcp_args(tool: str, content: str) -> Dict:
     return parser(content) if parser else {}
 
 
+def _python_interpreter() -> Optional[str]:
+    """Resolve a REAL Python interpreter for the ``python`` tool.
+
+    In a normal (source) run ``sys.executable`` IS a Python interpreter — use it.
+    But in a PyInstaller-frozen app ``sys.executable`` is the Alice binary
+    itself: running it with ``-c`` would re-launch the app (open another window)
+    instead of executing the user's code. When frozen we therefore fall back to
+    a real ``python3``/``python`` on PATH, and return None if the host has none
+    (the caller then reports that cleanly instead of spawning the app).
+    """
+    if not getattr(sys, "frozen", False):
+        return sys.executable or shutil.which("python3") or shutil.which("python")
+    return shutil.which("python3") or shutil.which("python")
+
+
 async def _call_mcp_tool(
     tool: str,
     content: str,
@@ -489,10 +505,16 @@ async def _direct_fallback(
             # Run user code in a subprocess so an infinite loop or crash
             # can't take the whole server down. -I = isolated mode (skip
             # user site, no PYTHONPATH inheritance) for hygiene.
+            interp = _python_interpreter()
+            if not interp:
+                return {
+                    "error": "python: no Python interpreter available. This packaged "
+                    "app is not itself a Python runtime; install python3 (or use the "
+                    "bash tool to run a script).",
+                    "exit_code": 127,
+                }
             proc = await asyncio.create_subprocess_exec(
-                # Use the running interpreter — there is no `python3.exe` on
-                # Windows, which made the agent's `python` tool fail there.
-                (sys.executable or "python"), "-I", "-c", content,
+                interp, "-I", "-c", content,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,

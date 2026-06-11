@@ -25,7 +25,7 @@
 #define MyAppName "Alice"
 #define MyAppExeName "AliceAI.exe"
 #define MyAppPublisher "Alice Protocol"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppId "{{A11CE0A1-0000-4A11-CE00-A11CEA1AAAAA}"
 
 [Setup]

@@ -103,11 +103,18 @@ def _run_backend(base: Path) -> int:
     for asset in ("static", "config"):
         src = backend_dir / asset
         link = runtime_dir / asset
-        if src.exists() and not link.exists():
-            try:
-                link.symlink_to(src, target_is_directory=True)
-            except (OSError, NotImplementedError):
-                pass
+        if not src.exists():
+            continue
+        # ALWAYS (re)point the symlink at the CURRENT bundle. A stale link left by
+        # a previous install/version (different bundle path, or an older build
+        # missing files) would otherwise keep serving outdated frontend assets —
+        # e.g. a 404 on an ES module aborts app.js's import graph → blank window.
+        try:
+            if link.is_symlink() or link.exists():
+                link.unlink()
+            link.symlink_to(src, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pass
     os.chdir(str(runtime_dir))
 
     # core/database.py reads DATABASE_URL (default sqlite:///./data/app.db, now
@@ -129,8 +136,10 @@ def _run_backend(base: Path) -> int:
     # Import the FastAPI app from the bundled backend (now on sys.path + cwd).
     from app import app  # type: ignore  # noqa: WPS433
 
+    # Access logging is off by default (noise); enable with ALICE_AI_ACCESS_LOG=1 to debug.
+    _access_log = os.environ.get("ALICE_AI_ACCESS_LOG", "0").strip().lower() in ("1", "true", "yes", "on")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info",
-                access_log=False)
+                access_log=_access_log)
     return 0
 
 

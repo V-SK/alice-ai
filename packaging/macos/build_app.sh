@@ -39,7 +39,7 @@ PYINSTALLER="${PY} -m PyInstaller"
 APP_NAME="AliceAI"
 BUNDLE_ID="org.aliceprotocol.ai"
 DISPLAY_NAME="Alice"
-VERSION="0.1.0"
+VERSION="0.1.1"
 ARCH="arm64"
 
 DIST="${ROOT_DIR}/dist"
