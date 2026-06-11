@@ -79,17 +79,29 @@ def _strip_comments_py(src: str) -> str:
 # =========================================================================== #
 class PrivacyInvariant(unittest.TestCase):
     def test_no_cdn_libs_in_served_html(self):
-        """KaTeX + Mermaid are vendored under /static/lib (privacy-P1). The
-        served index.html must reference NO jsdelivr/CDN <script>/<link>."""
+        """The served index.html must reference NO CDN — every script/style it
+        loads is local under /static (privacy-P1). The lean chat UI ships its
+        own /static/lean/* bundle + one vendored lib (highlight.js); it renders
+        neither LaTeX nor diagrams, so it pulls no KaTeX/Mermaid/CDN at all.
+        (The old odysseus frontend vendored KaTeX/Mermaid; the lean rewrite
+        dropped them, so this asserts the *general* no-CDN invariant instead.)"""
         html = _read(_STATIC / "index.html")
         self.assertNotIn("jsdelivr", html, "a jsdelivr CDN ref leaked back into index.html")
         self.assertNotIn("cdnjs", html)
         self.assertNotIn("unpkg", html)
-        # The local vendored libs must be present + referenced.
-        self.assertIn("/static/lib/katex", html)
-        self.assertIn("/static/lib/mermaid", html)
-        self.assertTrue((_STATIC / "lib" / "katex").exists())
-        self.assertTrue((_STATIC / "lib" / "mermaid.min.js").exists())
+        # The lean frontend loads its own controller locally (no ES-module/CDN graph).
+        self.assertIn("/static/lean/alice-lean.js", html)
+        # Every fetched <script src>/<link href> must be a LOCAL path, never an
+        # external origin (the inline data: SVG favicon and in-page #anchors are
+        # not network fetches). This is the real no-CDN privacy guarantee.
+        for _m in re.finditer(r'(?:src|href)\s*=\s*"([^"]+)"', html):
+            url = _m.group(1)
+            if url.startswith("data:") or url.startswith("#"):
+                continue
+            self.assertFalse(
+                url.startswith("http://") or url.startswith("https://"),
+                f"served HTML fetches an external URL (privacy-P1): {url}",
+            )
 
     def test_csp_is_self_only(self):
         """The Simple-mode CSP must be 'self'-only for scripts (no CDN), so any
