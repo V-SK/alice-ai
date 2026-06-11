@@ -83,6 +83,8 @@
     'common.close':  { en: 'Close', zh: '关闭' },
     'set.title':     { en: 'Settings', zh: '设置' },
     'set.model':     { en: 'Model', zh: '模型' },
+    'set.model.rp':  { en: 'Roleplay', zh: '角色扮演' },
+    'set.model.rp.desc': { en: 'Characters & story', zh: '角色与剧情' },
     'set.context':   { en: 'Context length', zh: '上下文长度' },
     'set.context.desc': { en: 'How much of the conversation Alice keeps in mind. Larger uses more memory.',
                           zh: 'Alice 能记住多长的对话。越大占用内存越多。' },
@@ -1174,7 +1176,7 @@
     mount.innerHTML = '';
     // de-dupe by id, preferring the active/recommended/ready entry per id.
     var seen = {};
-    var rows = [];
+    var order = [];
     state.models.forEach(function (m) {
       if (seen[m.id]) {
         // keep a better candidate: ready > recommended > existing
@@ -1185,12 +1187,19 @@
         return;
       }
       seen[m.id] = m;
-      rows.push(m.id);
+      order.push(m.id);
     });
 
-    rows.forEach(function (id) {
-      var m = seen[id];
-      var isActive = (state.current && state.current.id === id) || m.active;
+    // Split the general tiers from the DEDICATED roleplay line (family ==
+    // 'roleplay' → Alice RP / Alice RP Lite). RP is its own product line, so it
+    // gets its own labeled section instead of being mixed in at the bottom.
+    var general = [], roleplay = [];
+    order.forEach(function (id) {
+      (seen[id].family === 'roleplay' ? roleplay : general).push(seen[id]);
+    });
+
+    function appendRow(m) {
+      var isActive = (state.current && state.current.id === m.id) || m.active;
       var row = h('div', { class: 'opt-row' + (isActive ? ' active' : '') });
       var main = h('div', { class: 'opt-main' }, [
         h('div', { class: 'opt-name', text: m.display_name }),
@@ -1208,7 +1217,18 @@
         row.addEventListener('click', function () { switchModel(m, mount); });
       }
       mount.appendChild(row);
-    });
+    }
+
+    general.forEach(appendRow);
+
+    if (roleplay.length) {
+      // Dedicated roleplay divider, then the RP tiers (Alice RP / Alice RP Lite).
+      mount.appendChild(h('div', { class: 'opt-group' }, [
+        h('span', { class: 'opt-group-label', text: t('set.model.rp') }),
+        h('span', { class: 'opt-group-desc', text: t('set.model.rp.desc') }),
+      ]));
+      roleplay.forEach(appendRow);
+    }
   }
 
   function switchModel(m, mount) {
