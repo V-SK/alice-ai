@@ -171,13 +171,19 @@ rec("CSP has no jsdelivr", "jsdelivr" not in csp, f"csp_script={csp[:120]!r}")
 rec("CSP script-src 'self' only", "script-src 'self'" in csp and "jsdelivr" not in csp,
     "")
 
-# ── 9. index.html references local KaTeX/Mermaid, not CDN ──────────────────
+# ── 9. served index.html loads ONLY local assets, no CDN ───────────────────
+# The lean chat frontend renders neither LaTeX nor diagrams (the old odysseus
+# UI vendored KaTeX/Mermaid; the lean rewrite dropped them), so the privacy
+# invariant is the general one: every script/style is local, no external origin.
 st, _, rb = req("GET", "/", token_header=TOKEN, cookie=TOKEN, want_read=True)
 html = rb.decode("utf-8", "replace")
 rec("index.html: no jsdelivr <script>/<link>", "jsdelivr" not in html,
     f"jsdelivr_count={html.count('jsdelivr')}")
-rec("index.html: local katex referenced", "/static/lib/katex" in html, "")
-rec("index.html: local mermaid referenced", "/static/lib/mermaid" in html, "")
+rec("index.html: lean controller referenced locally", "/static/lean/alice-lean.js" in html, "")
+rec("index.html: no external script/style origin (no CDN)",
+    ('src="http' not in html) and ('href="http' not in html)
+    and ("cdnjs" not in html) and ("unpkg" not in html),
+    "an external origin or CDN ref leaked into served HTML")
 
 # ── 10. token cookie is injected into served HTML response ─────────────────
 st, hdrs, _ = req("GET", "/")
