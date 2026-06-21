@@ -878,6 +878,20 @@ try:
 except Exception as _alice_mm_exc:  # noqa: BLE001
     logger.warning("Alice Model Manager routes registration failed: %s", _alice_mm_exc, exc_info=True)
 
+# Remote Alice gateway proxy (optional "gateway mode"): GET /alice/gateway/models
+# + POST /alice/gateway/chat forward to api.aliceprotocol.org server-side. The
+# WebView CSP is locked to connect-src 'self', so talking to the live fleet MUST
+# go through this loopback seam (we do NOT widen the CSP). The gateway's 503
+# tier-status + Retry-After + plaintext are passed through VERBATIM so the client
+# renders honest loading/offline states, never a fabricated answer. Rides the
+# same /alice/* local-token middleware for free. Local-only mode is unaffected.
+try:
+    from routes.gateway_proxy_routes import setup_gateway_proxy_routes
+    app.include_router(setup_gateway_proxy_routes())
+    logger.info("Alice gateway proxy routes registered (/alice/gateway/*)")
+except Exception as _alice_gw_exc:  # noqa: BLE001
+    logger.warning("Alice gateway proxy routes registration failed: %s", _alice_gw_exc, exc_info=True)
+
 # Lean curated agent (code + files + web): POST /alice/agent_stream. Mounted
 # UNCONDITIONALLY (not behind _ALICE_MOUNT_PRIVILEGED) — it self-gates per
 # request on agent_mode_enabled() and 403s when Agent mode is off, and its

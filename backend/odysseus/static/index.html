@@ -42,6 +42,9 @@
   <script defer src="/static/lib/highlight.min.js"></script>
   <!-- Tiny markdown renderer (classic IIFE, sets window.AliceMD). -->
   <script defer src="/static/lean/alice-md.js"></script>
+  <!-- Gateway honest-render helpers (classic IIFE, sets window.AliceGateway).
+       Pure tier-status/receipt/login logic; must load before the controller. -->
+  <script defer src="/static/lean/alice-gateway.js"></script>
   <!-- App controller (classic IIFE; talks to /alice/* + /v1/chat/completions). -->
   <script defer src="/static/lean/alice-lean.js"></script>
 </body>
