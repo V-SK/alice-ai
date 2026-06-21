@@ -122,6 +122,40 @@
     'agent.tool.write_file': { en: 'Write file', zh: '写入文件' },
     'agent.tool.web_search': { en: 'Web search', zh: '联网搜索' },
     'agent.tool.web_fetch':  { en: 'Open page', zh: '抓取网页' },
+    // ---- Gateway mode (optional; talk to the live Alice fleet) -------------
+    // Local-first is the default; this whole section only appears when the user
+    // opts in. All chrome below is plain UI text (no model/brand names).
+    'gw.section':    { en: 'Alice network (optional)', zh: 'Alice 网络（可选）' },
+    'gw.desc':       { en: 'By default Alice runs fully on this device. Optionally sign in with your Alice wallet to use the live Alice network for larger models.',
+                       zh: '默认情况下 Alice 完全在本机运行。你也可以用 Alice 钱包登录，使用线上 Alice 网络运行更大的模型。' },
+    'gw.mode.local': { en: 'On this device', zh: '本机运行' },
+    'gw.mode.remote':{ en: 'Alice network', zh: 'Alice 网络' },
+    'gw.signin':     { en: 'Sign in with Alice', zh: '用 Alice 登录' },
+    'gw.signin.busy':{ en: 'Waiting for the wallet…', zh: '等待钱包…' },
+    'gw.signin.desc':{ en: 'Your Alice wallet is your account — no email, no password. The signature happens inside your wallet; your key never leaves it.',
+                       zh: '你的 Alice 钱包就是你的账号——无需邮箱或密码。签名在钱包内完成，私钥不会离开钱包。' },
+    'gw.signout':    { en: 'Sign out', zh: '退出登录' },
+    'gw.signedin':   { en: 'Signed in', zh: '已登录' },
+    'gw.noext':      { en: 'No Alice wallet detected in this app. Install or connect the Alice wallet, then try again.',
+                       zh: '此应用未检测到 Alice 钱包。请安装或连接 Alice 钱包后重试。' },
+    'gw.rejected':   { en: 'Signature request was rejected. Sign the challenge to start your session.',
+                       zh: '签名请求被拒绝。请完成签名以开始会话。' },
+    'gw.signfail':   { en: 'Could not sign in.', zh: '登录失败。' },
+    'gw.needsignin': { en: 'Sign in with your Alice wallet to use the network.', zh: '请用 Alice 钱包登录后使用网络。' },
+    'gw.tier.checking': { en: 'Checking live tier status…', zh: '正在检查线上档位状态…' },
+    'gw.tier.unavail':  { en: 'Live status unavailable — showing the catalog', zh: '线上状态不可用——显示目录' },
+    'gw.tier.live':     { en: 'Live tier status from the Alice network', zh: '来自 Alice 网络的线上档位状态' },
+    'gw.tier.catalog':  { en: 'Catalog (live status not advertised yet)', zh: '目录（暂未公布线上状态）' },
+    'gw.tier.retry':    { en: 'Retry', zh: '重试' },
+    'gw.tier.retryin':  { en: 'Retry (suggested in {s}s)', zh: '重试（建议 {s} 秒后）' },
+    'gw.tier.offline':  { en: 'No completion was produced — this tier is honestly offline. Pick a LIVE tier above.',
+                          zh: '未生成任何回复——该档位确实离线。请在上方选择一个 LIVE 档位。' },
+    'gw.tier.noselectable': { en: 'No live tier is serving right now — pick a LIVE tier in settings, or wait for one to come online.',
+                              zh: '当前没有可用的线上档位——请在设置中选择一个 LIVE 档位，或等待档位上线。' },
+    'rcpt.title':    { en: 'Verification receipt', zh: '验证回执' },
+    'rcpt.prov':     { en: 'spec_id PROVISIONAL', zh: 'spec_id 暂定' },
+    'rcpt.note':     { en: 'This is a hash-bound receipt, not a verified badge. It commits the serving worker (miner_id) to the exact token-ids it claims to have produced (output_token_ids_hash) under a decode rule (decode_rule) and a model spec (spec_id). How to recompute: tokenize the prompt + output with the spec’s tokenizer, canonical-JSON-encode the token-id arrays ([t0,t1,…], no spaces), and sha256 each — they must equal the hashes above. The spec_id is provisional: the canonical inference spec (tokenizer + decode determinism) is not yet frozen (#44 part 2), so a recompute can bind the bytes but cannot yet prove which exact spec ran. No claim of independent verification is made here.',
+                       zh: '这是一份哈希绑定回执，并非"已验证"徽章。它将服务节点（miner_id）绑定到其声称生成的确切 token-id（output_token_ids_hash），在给定的解码规则（decode_rule）与模型规格（spec_id）下。如何复算：用该规格的分词器对提示与输出分词，对 token-id 数组做规范 JSON 编码（[t0,t1,…]，无空格）并分别求 sha256——应与上方哈希一致。spec_id 为暂定：规范推理规格（分词器+解码确定性）尚未冻结（#44 part 2），因此复算只能绑定字节，暂不能证明具体运行了哪个规格。此处不主张任何独立验证。' },
   };
 
   function isLang(code) {
@@ -357,6 +391,81 @@
         });
       });
     },
+
+    // ---- gateway-mode proxy calls (loopback -> remote Alice fleet) -------- //
+    // GET /alice/gateway/models forwards to {gateway}/v1/models. Returns the
+    // gateway's raw OpenAI list body; the caller normalizes it for honest tier
+    // rendering. Same-origin (CSP-safe); identity headers attached.
+    gatewayModels: function () {
+      return fetch('/alice/gateway/models', {
+        method: 'GET', credentials: 'same-origin',
+        headers: GW.headers({ 'Accept': 'application/json' }),
+      }).then(function (r) {
+        return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; },
+          function () { return { ok: r.ok, status: r.status, body: null }; });
+      });
+    },
+
+    // POST /alice/gateway/chat forwards to {gateway}/v1/chat/completions and
+    // streams the OpenAI SSE. onDelta(text); onReceipt(alice_receipt). On a 503
+    // tier-status verdict the proxy returns the gateway's plaintext VERBATIM —
+    // we reject with a TierStatusError so the UI renders honest retry/offline,
+    // NEVER a fabricated answer or a generic swallow.
+    gatewayChat: function (model, messages, onDelta, onReceipt, signal) {
+      return new Promise(function (resolve, reject) {
+        fetch('/alice/gateway/chat', {
+          method: 'POST', credentials: 'same-origin',
+          headers: GW.headers({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
+          body: JSON.stringify({ model: model, messages: messages, stream: true }),
+          signal: signal,
+        }).then(function (resp) {
+          if (!resp.ok || !resp.body) {
+            return resp.text().then(function (text) {
+              // Honest tier-status fail-soft: surface the gateway's OWN reason.
+              var te = window.AliceGateway.parseTierError(resp.status, text, resp.headers.get('Retry-After'));
+              if (te) { reject(te); return; }
+              reject(new Error('Gateway responded ' + resp.status + (text ? ' — ' + text.slice(0, 180) : '')));
+            }, function () { reject(new Error('Gateway responded ' + resp.status)); });
+          }
+          var reader = resp.body.getReader();
+          var dec = new TextDecoder();
+          var buf = '';
+          function handleData(payload) {
+            if (payload === '[DONE]') return;
+            var obj;
+            try { obj = JSON.parse(payload); } catch (_) { return; }
+            var delta = obj.choices && obj.choices[0] && obj.choices[0].delta && obj.choices[0].delta.content;
+            if (delta) onDelta(delta);
+            var rc = window.AliceGateway.receiptFromChunk(obj);
+            if (rc && onReceipt) onReceipt(rc);
+          }
+          (function pump() {
+            return reader.read().then(function (res) {
+              if (res.done) { resolve(); return; }
+              buf += dec.decode(res.value, { stream: true });
+              var idx;
+              // SSE frames separated by a blank line; each may carry many data: lines.
+              while ((idx = buf.indexOf('\n\n')) !== -1) {
+                var frame = buf.slice(0, idx);
+                buf = buf.slice(idx + 2);
+                var lines = frame.split('\n');
+                for (var i = 0; i < lines.length; i++) {
+                  var line = lines[i].replace(/\r$/, '');
+                  if (line.indexOf('data:') === 0) handleData(line.slice(5).trim());
+                }
+              }
+              return pump();
+            });
+          })().catch(function (err) {
+            if (err && err.name === 'AbortError') resolve();
+            else reject(err);
+          });
+        }).catch(function (err) {
+          if (err && err.name === 'AbortError') resolve();
+          else reject(err);
+        });
+      });
+    },
   };
 
   /* ------------------------------ helpers -------------------------------- */
@@ -411,7 +520,142 @@
     messages: [],      // [{role, content}]
     streaming: false,
     abort: null,
+    // --- optional Alice-network ("gateway") mode --------------------------- //
+    // The app is LOCAL-FIRST: gateway === false is the default and the entire
+    // remote path stays dormant unless the user opts in (and signs in). When on,
+    // chat + the model picker talk to the live fleet via the loopback proxy.
+    gateway: false,             // is gateway mode active?
+    session: null,              // {address, name, signature, challenge, ...} | null
+    gwModels: [],               // normalized /v1/models tiers (gateway mode)
+    gwModel: null,              // selected gateway tier id (must be a ready tier)
+    gwModelsLoading: false,
+    gwModelsError: null,
+    gwSignalled: false,         // did the gateway advertise ANY status signal?
   };
+
+  /* ---- gateway-mode persistence + endpoint helpers ---------------------- *
+   * Mirrors the website's LS keys/identity model (alice-website/chat.html):
+   *   - the Alice wallet address IS the session identity (signRaw login);
+   *   - mode + session persist in localStorage so a relaunch restores them.
+   * The remote origin is reached ONLY via the same-origin loopback proxy
+   * (/alice/gateway/*) because the WebView CSP is connect-src 'self'.
+   * --------------------------------------------------------------------- */
+  var LS_GW_MODE = 'alice.lean.gateway';   // '1' when gateway mode is on
+  var LS_GW_SESSION = 'alice.session.v1';  // same key shape as the website
+  var GW = {
+    available: function () {
+      // The desktop shell has no browser extension, so window.injectedWeb3 is
+      // normally undefined. A future packaged-wallet/webview bridge can inject
+      // it; only THEN is sign-in offered (graceful degrade otherwise).
+      return !!(window.injectedWeb3 && getAliceProvider());
+    },
+    loadSession: function () {
+      try { var s = localStorage.getItem(LS_GW_SESSION); return s ? JSON.parse(s) : null; } catch (_) { return null; }
+    },
+    saveSession: function (s) {
+      state.session = s;
+      try { if (s) localStorage.setItem(LS_GW_SESSION, JSON.stringify(s)); else localStorage.removeItem(LS_GW_SESSION); } catch (_) {}
+    },
+    setMode: function (on) {
+      state.gateway = !!on;
+      try { localStorage.setItem(LS_GW_MODE, on ? '1' : '0'); } catch (_) {}
+    },
+    loadMode: function () {
+      try { return localStorage.getItem(LS_GW_MODE) === '1'; } catch (_) { return false; }
+    },
+    headers: function (base) {
+      // Attach the Alice account identity on BOTH proxied /v1 calls (the website
+      // does this at chat.html:531-533 / :682-683). Identity is only meaningful
+      // in gateway mode; local mode never sees it.
+      var h = base || {};
+      if (state.session && state.session.address) {
+        h['X-Alice-Address'] = state.session.address;
+        h['Authorization'] = 'Alice ' + state.session.address;
+      }
+      return h;
+    },
+  };
+
+  /* ---- wallet = account (sign-in with Alice) --------------------------- *
+   * The EXACT website flow (alice-website/chat.html:360-409), transplanted as
+   * classic-script functions. window.injectedWeb3.alice is the Alice wallet
+   * provider; signRaw runs INSIDE the wallet and the private key never leaves
+   * it. In a plain PyWebView shell injectedWeb3 is undefined, so GW.available()
+   * is false and the whole sign-in affordance is hidden — local mode unaffected.
+   */
+  function getAliceProvider() {
+    var web3 = (typeof window !== 'undefined') && window.injectedWeb3;
+    if (!web3) return null;
+    return web3.alice || web3['polkadot-js'] || (Object.values(web3)[0]) || null;
+  }
+  function connectWallet() {
+    var provider = getAliceProvider();
+    if (!provider) { var e = new Error('NO_EXTENSION'); e.code = 'NO_EXTENSION'; return Promise.reject(e); }
+    return Promise.resolve(provider.enable('aliceprotocol.org')).then(function (injected) {
+      return Promise.resolve(injected.accounts.get()).then(function (accounts) {
+        if (!accounts || !accounts.length) { var e = new Error('NO_ACCOUNTS'); e.code = 'NO_ACCOUNTS'; throw e; }
+        return { injected: injected, accounts: accounts };
+      });
+    });
+  }
+  function signLoginChallenge(injected, address) {
+    // Build the IDENTICAL challenge text as the portal (shared helper), so the
+    // signature is portable; signRaw runs inside the wallet.
+    var built = window.AliceGateway.buildLoginChallenge(address, 'aliceprotocol.org');
+    if (!injected.signer || !injected.signer.signRaw) {
+      return Promise.reject(new Error('wallet exposes no signRaw signer'));
+    }
+    return Promise.resolve(injected.signer.signRaw({
+      address: address, data: built.challenge, type: 'bytes',
+    })).then(function (res) {
+      return { challenge: built.challenge, signature: res.signature, nonce: built.nonce, issuedAt: built.issuedAt };
+    });
+  }
+
+  /* Fetch + normalize the live gateway catalog for the tier picker. Fail-soft
+   * EXACTLY like the website (chat.html:519-560): on any error / non-200 / empty
+   * / a pre-deploy gateway that advertises NO status signal, keep the picker
+   * empty-but-honest rather than inventing tiers; `gwSignalled` records whether
+   * the gateway advertised real status. After each refresh, AUTO-AVOID: if the
+   * selected tier is absent or no longer selectable, snap to the first ready
+   * tier — never leave a non-ready tier active (chat.html:768-774). Returns a
+   * promise so callers can re-render. */
+  function refreshGatewayModels() {
+    state.gwModelsLoading = true;
+    state.gwModelsError = null;
+    return API.gatewayModels().then(function (res) {
+      if (!res.ok || !res.body) throw new Error('models ' + res.status);
+      var norm = window.AliceGateway.normalizeCatalog(res.body);
+      // A gateway that carries NO availability signal at all is the pre-deploy
+      // shape; we keep an empty list + flag so the UI shows "catalog (status not
+      // advertised)" instead of marking everything dead.
+      state.gwModels = norm.models;
+      state.gwSignalled = norm.signalled;
+      autoAvoidGatewayTier();
+    }).catch(function (err) {
+      state.gwModels = [];
+      state.gwSignalled = false;
+      state.gwModelsError = String((err && err.message) || err);
+    }).then(function () {
+      state.gwModelsLoading = false;
+      // Tier availability may have just changed -> re-evaluate the send gate.
+      syncSendEnabled();
+    });
+  }
+  // Keep the selected gateway tier VALID: if absent or non-selectable, snap to
+  // the first ready tier (or null if none is serving). Never leave a non-ready
+  // tier selected (防吹牛: only a ready tier dispatches).
+  function autoAvoidGatewayTier() {
+    var cur = null;
+    for (var i = 0; i < state.gwModels.length; i++) {
+      if (state.gwModels[i].id === state.gwModel) { cur = state.gwModels[i]; break; }
+    }
+    if (!cur || !window.AliceGateway.statusPres(cur.status).selectable) {
+      var next = window.AliceGateway.firstSelectable(state.gwModels);
+      state.gwModel = next ? next.id : null;
+    }
+  }
+
   // i18n re-render bookkeeping (set by the screens; read by rerenderAll()).
   var _lastSetupRec = null;   // the model card the setup screen last rendered
   var _settingsOpen = false;  // whether the settings sheet is currently open
@@ -447,6 +691,13 @@
     return 'alice-' + activeModelKey();
   }
   function activeDisplayName() {
+    // In gateway mode the pill reflects the selected LIVE network tier.
+    if (state.gateway) {
+      for (var i = 0; i < state.gwModels.length; i++) {
+        if (state.gwModels[i].id === state.gwModel) return state.gwModels[i].name;
+      }
+      return t('gw.mode.remote');
+    }
     if (state.current && state.current.display_name) return state.current.display_name;
     var m = findModel(activeModelKey());
     return m ? m.display_name : 'Alice';
@@ -678,8 +929,18 @@
     var ta = el('composerInput');
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+    syncSendEnabled();
+  }
+
+  // Single source of truth for whether the send button is enabled (when not
+  // streaming): needs non-empty input AND, in gateway mode, a selectable LIVE
+  // tier. While streaming the button is the STOP affordance (always enabled).
+  function syncSendEnabled() {
     var send = el('sendBtn');
-    if (!state.streaming) send.disabled = ta.value.trim().length === 0;
+    if (!send || state.streaming) return;
+    var ta = el('composerInput');
+    var empty = !ta || ta.value.trim().length === 0;
+    send.disabled = empty || gatewaySendBlocked();
   }
 
   function renderThread() {
@@ -717,10 +978,20 @@
         });
         msg.appendChild(wrap);
       } else {
-        var bubble = h('div', { class: 'bubble md' });
-        bubble.innerHTML = window.AliceMD ? window.AliceMD.render(content) : escapeText(content);
-        highlightWithin(bubble);
-        msg.appendChild(bubble);
+        // Drop the empty bubble for an honest-offline turn (tier banner only).
+        if (content || !m.tier) {
+          var bubble = h('div', { class: 'bubble md' });
+          bubble.innerHTML = window.AliceMD ? window.AliceMD.render(content) : escapeText(content);
+          highlightWithin(bubble);
+          msg.appendChild(bubble);
+        }
+        // Verification receipt + honest tier banner (gateway mode), rebuilt from
+        // the persisted message so restore + language-switch reproduce them.
+        if (m.receipt || m.tier) {
+          var extra = h('div', { class: 'msg-extra' });
+          msg.appendChild(extra);
+          renderExtras(extra, m);
+        }
       }
     } else {
       // user content as plain text (CSS preserves whitespace)
@@ -786,10 +1057,25 @@
     if (force || nearBottom) s.scrollTop = s.scrollHeight;
   }
 
+  // Gateway-mode send gate: in gateway mode, dispatch is allowed ONLY when a
+  // live tier is selectable (gatewayChatModel() resolves to a non-null id). When
+  // no tier is serving we refuse to send — never dispatch against a non-ready
+  // tier. LOCAL mode is unaffected (always sendable).
+  function gatewaySendBlocked() {
+    return !!state.gateway && gatewayChatModel() === null;
+  }
+
   function onSend() {
     var ta = el('composerInput');
     var text = ta.value.trim();
     if (!text || state.streaming) return;
+    // Gateway mode with NO selectable tier: block dispatch + tell the user to
+    // pick / wait for a LIVE tier. (LOCAL mode never reaches this guard.)
+    if (gatewaySendBlocked()) {
+      toast(t('gw.tier.noselectable'));
+      syncSendEnabled();
+      return;
+    }
 
     state.messages.push({ role: 'user', content: text });
     ta.value = '';
@@ -806,7 +1092,10 @@
     else sendChatTurn(thread);
   }
 
-  // Plain chat turn: a single streamed assistant bubble via /v1/chat/completions.
+  // Plain chat turn: a single streamed assistant bubble. Routes to the LOCAL
+  // in-process engine (/v1/chat/completions) by default, or — when gateway mode
+  // is active — to the live Alice fleet via the loopback proxy, with honest
+  // tier-status (503) handling + verification-receipt capture.
   function sendChatTurn(thread) {
     var assistant = { role: 'assistant', content: '' };
     state.messages.push(assistant);
@@ -815,6 +1104,9 @@
     ]);
     var bubble = h('div', { class: 'bubble md caret' });
     msgNode.appendChild(bubble);
+    // a mount for the receipt / tier banner BELOW the bubble (assistant turn)
+    var extra = h('div', { class: 'msg-extra' });
+    msgNode.appendChild(extra);
     thread.appendChild(msgNode);
     scrollToBottom(true);
 
@@ -834,26 +1126,164 @@
       acc += chunk;
       if (!pending) { pending = true; requestAnimationFrame(flush); }
     }
+    function onReceipt(rc) {
+      // Persist on the message so it survives rerender/restore; render live.
+      assistant.receipt = rc;
+      renderExtras(extra, assistant);
+      scrollToBottom(false);
+    }
 
-    API.chat(chatModelName(), apiMessages(), onDelta, state.abort.signal)
-      .then(function () {
-        assistant.content = acc;
-        bubble.classList.remove('caret');
-        bubble.innerHTML = window.AliceMD ? window.AliceMD.render(acc || '') : escapeText(acc);
-        if (!acc) bubble.appendChild(h('span', { class: 'hero-sub', text: '' }));
+    var onDone = function () {
+      assistant.content = acc;
+      bubble.classList.remove('caret');
+      bubble.innerHTML = window.AliceMD ? window.AliceMD.render(acc || '') : escapeText(acc);
+      if (!acc) bubble.appendChild(h('span', { class: 'hero-sub', text: '' }));
+      renderExtras(extra, assistant);
+      finishStream();
+    };
+    var onErr = function (err) {
+      bubble.classList.remove('caret');
+      // Honest tier-status: a loading/no-capable verdict is NOT a generic error.
+      // Surface the gateway's OWN plaintext + retry/offline — never a fake reply.
+      if (err && err.tier) {
+        assistant.tier = { status: err.status, message: err.message, retryAfter: err.retryAfter };
+        assistant.content = acc; // keep any partial text (usually empty here)
+        if (!acc) bubble.remove();
+        renderExtras(extra, assistant);
         finishStream();
+        return;
+      }
+      if (!acc) {
+        assistant.content = t('chat.error');
+        bubble.innerHTML = '';
+        bubble.appendChild(h('p', { class: 'dl-err', text: t('chat.error') + ' (' + (err && err.message || 'error') + ')' }));
+      } else {
+        assistant.content = acc;
+      }
+      renderExtras(extra, assistant);
+      finishStream();
+    };
+
+    if (state.gateway) {
+      API.gatewayChat(gatewayChatModel(), apiMessages(), onDelta, onReceipt, state.abort.signal)
+        .then(onDone).catch(onErr);
+    } else {
+      API.chat(chatModelName(), apiMessages(), onDelta, state.abort.signal)
+        .then(onDone).catch(onErr);
+    }
+  }
+
+  // The model string sent to the gateway. In gateway mode the selected tier id
+  // (a READY tier — auto-avoid keeps it valid) is the wire model. Resolves
+  // HONESTLY via AliceGateway.dispatchModel: the selected id only if it is still
+  // selectable, else the first selectable tier, else `null`. It NEVER falls back
+  // to a non-selectable tier id or the literal 'alice' — `null` means "no live
+  // tier; refuse to dispatch" and the send path honors that (防吹牛).
+  function gatewayChatModel() {
+    return window.AliceGateway.dispatchModel(state.gwModel, state.gwModels);
+  }
+
+  /* Render the per-assistant-turn extras (verification receipt + honest tier
+   * banner) into `mount`. Idempotent: clears + rebuilds from the message state,
+   * so it works for live streaming AND restore/language-switch. */
+  function renderExtras(mount, m) {
+    if (!mount) return;
+    mount.innerHTML = '';
+    if (m.tier) mount.appendChild(renderTierBanner(m, mount));
+    if (m.receipt) mount.appendChild(renderReceiptPanel(m.receipt));
+  }
+
+  /* Honest tier-status banner (mirror chat.html:626-643). `loading` invites a
+   * retry; `no_capable_node` is offline (no retry, "pick a LIVE tier"). */
+  function renderTierBanner(m, mount) {
+    var tier = m.tier;
+    var loading = tier.status === 'loading';
+    var banner = h('div', { class: 'tier-banner ' + (loading ? 'warn' : 'info') });
+    banner.appendChild(h('div', { class: 'tier-msg', text: tier.message || t('chat.error') }));
+    if (loading) {
+      var label = tier.retryAfter != null
+        ? t('gw.tier.retryin').replace('{s}', String(tier.retryAfter))
+        : t('gw.tier.retry');
+      var btn = h('button', { class: 'tier-retry', type: 'button', text: label });
+      btn.addEventListener('click', function () {
+        if (state.streaming) return;
+        retryTierTurn(m, mount);
+      });
+      banner.appendChild(btn);
+    } else {
+      banner.appendChild(h('div', { class: 'tier-sub', text: t('gw.tier.offline') }));
+    }
+    return banner;
+  }
+
+  /* Retry a tier-loading turn in place: clears the banner and re-runs the same
+   * transcript against the (still-selected, still-ready) gateway tier. The
+   * placeholder assistant message `m` is reused. */
+  function retryTierTurn(m, mount) {
+    m.tier = null;
+    m.content = '';
+    renderExtras(mount, m);
+    setStreaming(true);
+    state.abort = new AbortController();
+    var bubble = mount.parentNode && mount.parentNode.querySelector('.bubble');
+    if (!bubble) {
+      bubble = h('div', { class: 'bubble md caret' });
+      mount.parentNode.insertBefore(bubble, mount);
+    }
+    bubble.classList.add('caret');
+    var acc = '';
+    function onDelta(chunk) { acc += chunk; bubble.innerHTML = window.AliceMD ? window.AliceMD.render(acc) : escapeText(acc); scrollToBottom(false); }
+    function onReceipt(rc) { m.receipt = rc; renderExtras(mount, m); }
+    API.gatewayChat(gatewayChatModel(), retryWire(m), onDelta, onReceipt, state.abort.signal)
+      .then(function () {
+        m.content = acc; bubble.classList.remove('caret');
+        bubble.innerHTML = window.AliceMD ? window.AliceMD.render(acc || '') : escapeText(acc);
+        renderExtras(mount, m); finishStream();
       })
       .catch(function (err) {
         bubble.classList.remove('caret');
-        if (!acc) {
-          assistant.content = t('chat.error');
-          bubble.innerHTML = '';
-          bubble.appendChild(h('p', { class: 'dl-err', text: t('chat.error') + ' (' + (err && err.message || 'error') + ')' }));
-        } else {
-          assistant.content = acc;
-        }
-        finishStream();
+        if (err && err.tier) { m.tier = { status: err.status, message: err.message, retryAfter: err.retryAfter }; if (!acc) bubble.remove(); }
+        else if (!acc) { m.content = t('chat.error'); bubble.innerHTML = ''; bubble.appendChild(h('p', { class: 'dl-err', text: t('chat.error') })); }
+        renderExtras(mount, m); finishStream();
       });
+  }
+  // The transcript up to (and excluding) the assistant message `m` being retried.
+  function retryWire(m) {
+    var idx = state.messages.indexOf(m);
+    var slice = idx >= 0 ? state.messages.slice(0, idx) : state.messages.slice();
+    return slice.map(function (x) { return { role: x.role, content: x.content }; });
+  }
+
+  /* Collapsible verification-receipt panel (mirror chat.html:566-614 /
+   * ReceiptPanel). spec_id is PROVISIONAL; paid_acu defaults to '0' (credit-only,
+   * no real-money). NO emoji (lean rule). */
+  function renderReceiptPanel(receipt) {
+    var rows = window.AliceGateway.receiptRows(receipt);
+    var wrap = h('div', { class: 'receipt' });
+    var open = false;
+    var caret = h('span', { class: 'receipt-caret', text: '▸' });
+    var head = h('button', { class: 'receipt-head', type: 'button' }, [
+      caret,
+      h('span', { class: 'receipt-title', text: t('rcpt.title') }),
+      h('span', { class: 'receipt-badge', title: 'spec_id is provisional until #44 part 2 finalizes the canonical inference spec', text: t('rcpt.prov') }),
+      h('span', { class: 'receipt-spec mono', text: receipt.spec_id || '' }),
+    ]);
+    var grid = h('div', { class: 'receipt-grid hidden' });
+    rows.forEach(function (kv) {
+      grid.appendChild(h('div', { class: 'receipt-cell' }, [
+        h('div', { class: 'rk', text: kv[0] }),
+        h('div', { class: 'rv mono', text: kv[1] }),
+      ]));
+    });
+    grid.appendChild(h('div', { class: 'rnote', text: t('rcpt.note') }));
+    head.addEventListener('click', function () {
+      open = !open;
+      grid.classList.toggle('hidden', !open);
+      caret.textContent = open ? '▾' : '▸';
+    });
+    wrap.appendChild(head);
+    wrap.appendChild(grid);
+    return wrap;
   }
 
   // Agent turn: interleaved prose bubbles + live tool cards via /alice/agent_stream.
@@ -989,8 +1419,13 @@
     if (!send) return;
     send.innerHTML = on ? IC.stop : IC.send;
     send.setAttribute('aria-label', on ? t('chat.stop') : t('chat.send'));
-    send.disabled = false;
-    if (!on) autoGrow();
+    if (on) {
+      // STOP affordance while streaming — always actionable.
+      send.disabled = false;
+    } else {
+      // Back to send: re-evaluate the gate (input + gateway live-tier).
+      autoGrow();
+    }
   }
 
   function newChat() {
@@ -1072,6 +1507,9 @@
     modelSec.appendChild(listMount);
     sheet.appendChild(modelSec);
     renderModelList(listMount);
+
+    // --- Alice network (gateway mode) — optional, opt-in, wallet sign-in ---
+    sheet.appendChild(renderGatewaySection());
 
     // --- context slider ---
     var ctxSec = h('div', { class: 'sheet-section', id: 'ctxSection' });
@@ -1167,9 +1605,175 @@
   }
 
   function closeOverlay(overlay) {
-    if (overlay.getAttribute && overlay.getAttribute('data-settings') === '1') _settingsOpen = false;
+    if (overlay.getAttribute && overlay.getAttribute('data-settings') === '1') {
+      _settingsOpen = false;
+      // Mode/tier/sign-in may have changed in the sheet -> refresh the send gate.
+      syncSendEnabled();
+    }
     overlay.style.animation = 'fade .15s ease reverse forwards';
     setTimeout(function () { overlay.remove(); }, 140);
+  }
+
+  /* ---- Alice network (gateway) settings section ------------------------- *
+   * Local-first: a LOCAL ↔ NETWORK mode toggle, an OPTIONAL wallet sign-in, and
+   * (when on + signed in) the live-tier picker rendering /v1/models honest
+   * status. The whole thing degrades gracefully: if the shell exposes no Alice
+   * wallet (no window.injectedWeb3), sign-in is hidden and the toggle is
+   * disabled — the app stays in its current no-account local mode. */
+  function renderGatewaySection() {
+    var sec = h('div', { class: 'sheet-section', id: 'gatewaySection' });
+    sec.appendChild(h('div', { class: 'sheet-label', text: t('gw.section') }));
+    sec.appendChild(h('div', { class: 'sheet-desc', text: t('gw.desc') }));
+
+    var walletPresent = GW.available();
+    var signedIn = !!(state.session && state.session.address);
+
+    // mode toggle (local <-> network). Only enableable once signed in.
+    var row = h('div', { class: 'toggle-row', style: 'margin-top:14px' });
+    row.appendChild(h('div', { class: 'sheet-desc', text: state.gateway ? t('gw.mode.remote') : t('gw.mode.local') }));
+    var sw = h('label', { class: 'switch' });
+    var swInput = h('input', { type: 'checkbox' });
+    swInput.checked = !!state.gateway;
+    swInput.disabled = !signedIn;       // can't use the network without an account
+    sw.appendChild(swInput);
+    sw.appendChild(h('span', { class: 'track' }));
+    row.appendChild(sw);
+    sec.appendChild(row);
+
+    swInput.addEventListener('change', function () {
+      GW.setMode(swInput.checked);
+      if (state.gateway) refreshGatewayModels().then(function () { reopenSettings(); updateModelPill(); });
+      else { updateModelPill(); reopenSettings(); }
+    });
+
+    // account block
+    var acct = h('div', { style: 'margin-top:14px' });
+    if (signedIn) {
+      var addr = state.session.address;
+      var shortAddr = addr.length > 14 ? addr.slice(0, 8) + '…' + addr.slice(-6) : addr;
+      acct.appendChild(h('div', { class: 'gw-account' }, [
+        h('span', { class: 'pill-dot' }),
+        h('span', { class: 'gw-account-name', text: (state.session.name ? state.session.name + ' · ' : '') + t('gw.signedin') }),
+        h('span', { class: 'gw-account-addr mono', text: shortAddr }),
+      ]));
+      var outBtn = h('button', { class: 'btn', type: 'button', text: t('gw.signout'), style: 'margin-top:10px' });
+      outBtn.addEventListener('click', function () {
+        GW.saveSession(null);
+        GW.setMode(false);
+        updateModelPill();
+        reopenSettings();
+      });
+      acct.appendChild(outBtn);
+    } else if (walletPresent) {
+      acct.appendChild(h('div', { class: 'sheet-desc', text: t('gw.signin.desc') }));
+      var inBtn = h('button', { class: 'btn btn-primary', type: 'button', text: t('gw.signin'), style: 'margin-top:10px' });
+      var errNote = h('div', { class: 'gw-signin-err', text: '' });
+      inBtn.addEventListener('click', function () {
+        inBtn.disabled = true; inBtn.textContent = t('gw.signin.busy'); errNote.textContent = '';
+        doSignIn().then(function () {
+          GW.setMode(true);
+          return refreshGatewayModels();
+        }).then(function () {
+          updateModelPill(); reopenSettings();
+        }).catch(function (err) {
+          inBtn.disabled = false; inBtn.textContent = t('gw.signin');
+          var code = err && err.code;
+          if (code === 'NO_EXTENSION') errNote.textContent = t('gw.noext');
+          else if (code === 'NO_ACCOUNTS') errNote.textContent = t('gw.noext');
+          else if (/reject|cancel|den/i.test(String(err && err.message))) errNote.textContent = t('gw.rejected');
+          else errNote.textContent = t('gw.signfail') + ' ' + ((err && err.message) || '');
+        });
+      });
+      acct.appendChild(inBtn);
+      acct.appendChild(errNote);
+    } else {
+      // No wallet in this shell — graceful degrade (local mode stays the default).
+      acct.appendChild(h('div', { class: 'muted', text: t('gw.noext') }));
+    }
+    sec.appendChild(acct);
+
+    // live-tier picker (only meaningful in gateway mode + signed in)
+    if (state.gateway && signedIn) {
+      var tierMount = h('div', { id: 'gwTierList', style: 'margin-top:14px' });
+      sec.appendChild(tierMount);
+      renderGatewayTierList(tierMount);
+    }
+    return sec;
+  }
+
+  // Run the full sign-in: connect wallet -> (pick account) -> sign challenge ->
+  // persist session. Single-account auto-finalizes; multi-account picks the
+  // first (a fuller picker can be added; identity is the address either way).
+  function doSignIn() {
+    return connectWallet().then(function (r) {
+      var account = r.accounts[0];
+      return signLoginChallenge(r.injected, account.address).then(function (proof) {
+        GW.saveSession({
+          address: account.address,
+          name: account.name || null,
+          signature: proof.signature,
+          challenge: proof.challenge,
+          nonce: proof.nonce,
+          issuedAt: proof.issuedAt,
+        });
+      });
+    });
+  }
+
+  // Close + reopen the settings sheet so it rebuilds against the new state.
+  function reopenSettings() {
+    var ov = document.querySelector('.overlay[data-settings="1"]');
+    if (ov) ov.remove();
+    _settingsOpen = false;
+    openSettings();
+  }
+
+  /* The gateway live-tier picker: renders each /v1/models tier with a status
+   * badge; NON-ready rows are greyed + NON-selectable (防吹牛). Mirrors
+   * chat.html ModelPicker (chat.html:461-512): a "Live tier status / Catalog"
+   * meta line, per-row badge, click guarded by selectable. */
+  function renderGatewayTierList(mount) {
+    mount.innerHTML = '';
+    var G = window.AliceGateway;
+
+    // meta line — honest about WHERE the list came from
+    var metaText = state.gwModelsLoading ? t('gw.tier.checking')
+      : state.gwModelsError ? t('gw.tier.unavail')
+      : state.gwSignalled ? t('gw.tier.live')
+      : t('gw.tier.catalog');
+    mount.appendChild(h('div', { class: 'gw-tier-meta', text: metaText }));
+
+    if (!state.gwModels.length) {
+      mount.appendChild(h('div', { class: 'muted', text: state.gwModelsError ? t('gw.tier.unavail') : t('gw.tier.noselectable') }));
+      return;
+    }
+
+    state.gwModels.forEach(function (m) {
+      var pres = G.statusPres(m.status);
+      var selectable = pres.selectable;
+      var isSel = (m.id === state.gwModel);
+      var row = h('div', { class: 'opt-row gw-tier' + (isSel ? ' active' : '') + (selectable ? '' : ' disabled') });
+      var main = h('div', { class: 'opt-main' }, [
+        h('div', { class: 'opt-name' }, [
+          h('span', { text: m.name }),
+          m.params ? h('span', { class: 'gw-param', text: m.params }) : null,
+        ]),
+        h('div', { class: 'opt-tag', text: m.note }),
+      ]);
+      row.appendChild(main);
+      row.appendChild(h('span', { class: 'tier-tag ' + pres.cls, text: pres.label }));
+      if (selectable && !isSel) {
+        row.addEventListener('click', function () {
+          state.gwModel = m.id;
+          renderGatewayTierList(mount);
+          updateModelPill();
+          syncSendEnabled();
+        });
+      }
+      // NON-ready rows: no click handler at all (early-return semantics) —
+      // they look non-ready and cannot be picked.
+      mount.appendChild(row);
+    });
   }
 
   function renderModelList(mount) {
@@ -1356,6 +1960,19 @@
   function boot() {
     // Reflect the resolved UI language onto <html lang> from the first paint.
     document.documentElement.setAttribute('lang', _lang);
+
+    // Restore optional gateway mode + Alice-wallet session (LOCAL-FIRST: both
+    // default off/null, so a fresh install behaves exactly as before). Gateway
+    // mode only activates when it was previously enabled AND a session exists.
+    state.session = GW.loadSession();
+    if (GW.loadMode() && state.session && state.session.address) {
+      state.gateway = true;
+      // Load the live tiers in the background; the picker + pill update when ready.
+      refreshGatewayModels().then(function () { updateModelPill(); });
+    } else {
+      state.gateway = false;
+    }
+
     // Kick off the independent reads in parallel.
     var pDevice = API.device().catch(function () { return null; });
     var pModels = refreshModels().catch(function () { return []; });
