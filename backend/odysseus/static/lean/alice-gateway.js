@@ -83,6 +83,25 @@
     return null;
   }
 
+  // Resolve the wire model id to dispatch against in gateway mode — HONESTLY.
+  // Returns the currently-selected tier id ONLY if that tier is still
+  // selectable (ready); otherwise the first selectable tier's id; otherwise
+  // `null`. It MUST NEVER fall back to an arbitrary non-selectable tier id or a
+  // literal placeholder — `null` means "refuse to dispatch, no live tier".
+  // (防吹牛: mint/serve only against a verifiably LIVE tier.)
+  function dispatchModel(selectedId, models) {
+    var list = Array.isArray(models) ? models : [];
+    if (selectedId) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id === selectedId && statusPres(list[i].status).selectable) {
+          return selectedId;
+        }
+      }
+    }
+    var first = firstSelectable(list);
+    return first ? first.id : null;
+  }
+
   /* Normalize a whole `GET /v1/models` body (the proxy returns the gateway's
    * raw OpenAI shape: {object:'list', data:[...]}). Returns:
    *   { models, signalled, statusKnown }
@@ -217,6 +236,7 @@
     normalizeModel: normalizeModel,
     normalizeCatalog: normalizeCatalog,
     firstSelectable: firstSelectable,
+    dispatchModel: dispatchModel,
     REASON_MODEL_TIER_LOADING: REASON_MODEL_TIER_LOADING,
     REASON_MODEL_TIER_NO_CAPABLE_NODE: REASON_MODEL_TIER_NO_CAPABLE_NODE,
     TierStatusError: TierStatusError,

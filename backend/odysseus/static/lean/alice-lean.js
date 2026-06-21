@@ -150,7 +150,8 @@
     'gw.tier.retryin':  { en: 'Retry (suggested in {s}s)', zh: '重试（建议 {s} 秒后）' },
     'gw.tier.offline':  { en: 'No completion was produced — this tier is honestly offline. Pick a LIVE tier above.',
                           zh: '未生成任何回复——该档位确实离线。请在上方选择一个 LIVE 档位。' },
-    'gw.tier.noselectable': { en: 'No live tier is serving right now. Try again shortly.', zh: '当前没有可用的线上档位，请稍后再试。' },
+    'gw.tier.noselectable': { en: 'No live tier is serving right now — pick a LIVE tier in settings, or wait for one to come online.',
+                              zh: '当前没有可用的线上档位——请在设置中选择一个 LIVE 档位，或等待档位上线。' },
     'rcpt.title':    { en: 'Verification receipt', zh: '验证回执' },
     'rcpt.prov':     { en: 'spec_id PROVISIONAL', zh: 'spec_id 暂定' },
     'rcpt.note':     { en: 'This is a hash-bound receipt, not a verified badge. It commits the serving worker (miner_id) to the exact token-ids it claims to have produced (output_token_ids_hash) under a decode rule (decode_rule) and a model spec (spec_id). How to recompute: tokenize the prompt + output with the spec’s tokenizer, canonical-JSON-encode the token-id arrays ([t0,t1,…], no spaces), and sha256 each — they must equal the hashes above. The spec_id is provisional: the canonical inference spec (tokenizer + decode determinism) is not yet frozen (#44 part 2), so a recompute can bind the bytes but cannot yet prove which exact spec ran. No claim of independent verification is made here.',
@@ -637,6 +638,8 @@
       state.gwModelsError = String((err && err.message) || err);
     }).then(function () {
       state.gwModelsLoading = false;
+      // Tier availability may have just changed -> re-evaluate the send gate.
+      syncSendEnabled();
     });
   }
   // Keep the selected gateway tier VALID: if absent or non-selectable, snap to
@@ -926,8 +929,18 @@
     var ta = el('composerInput');
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+    syncSendEnabled();
+  }
+
+  // Single source of truth for whether the send button is enabled (when not
+  // streaming): needs non-empty input AND, in gateway mode, a selectable LIVE
+  // tier. While streaming the button is the STOP affordance (always enabled).
+  function syncSendEnabled() {
     var send = el('sendBtn');
-    if (!state.streaming) send.disabled = ta.value.trim().length === 0;
+    if (!send || state.streaming) return;
+    var ta = el('composerInput');
+    var empty = !ta || ta.value.trim().length === 0;
+    send.disabled = empty || gatewaySendBlocked();
   }
 
   function renderThread() {
@@ -1044,10 +1057,25 @@
     if (force || nearBottom) s.scrollTop = s.scrollHeight;
   }
 
+  // Gateway-mode send gate: in gateway mode, dispatch is allowed ONLY when a
+  // live tier is selectable (gatewayChatModel() resolves to a non-null id). When
+  // no tier is serving we refuse to send — never dispatch against a non-ready
+  // tier. LOCAL mode is unaffected (always sendable).
+  function gatewaySendBlocked() {
+    return !!state.gateway && gatewayChatModel() === null;
+  }
+
   function onSend() {
     var ta = el('composerInput');
     var text = ta.value.trim();
     if (!text || state.streaming) return;
+    // Gateway mode with NO selectable tier: block dispatch + tell the user to
+    // pick / wait for a LIVE tier. (LOCAL mode never reaches this guard.)
+    if (gatewaySendBlocked()) {
+      toast(t('gw.tier.noselectable'));
+      syncSendEnabled();
+      return;
+    }
 
     state.messages.push({ role: 'user', content: text });
     ta.value = '';
@@ -1146,12 +1174,13 @@
   }
 
   // The model string sent to the gateway. In gateway mode the selected tier id
-  // (a READY tier — auto-avoid keeps it valid) is the wire model. Falls back to
-  // the first selectable tier if somehow unset.
+  // (a READY tier — auto-avoid keeps it valid) is the wire model. Resolves
+  // HONESTLY via AliceGateway.dispatchModel: the selected id only if it is still
+  // selectable, else the first selectable tier, else `null`. It NEVER falls back
+  // to a non-selectable tier id or the literal 'alice' — `null` means "no live
+  // tier; refuse to dispatch" and the send path honors that (防吹牛).
   function gatewayChatModel() {
-    if (state.gwModel) return state.gwModel;
-    var first = window.AliceGateway.firstSelectable(state.gwModels);
-    return first ? first.id : (state.gwModels[0] && state.gwModels[0].id) || 'alice';
+    return window.AliceGateway.dispatchModel(state.gwModel, state.gwModels);
   }
 
   /* Render the per-assistant-turn extras (verification receipt + honest tier
@@ -1390,8 +1419,13 @@
     if (!send) return;
     send.innerHTML = on ? IC.stop : IC.send;
     send.setAttribute('aria-label', on ? t('chat.stop') : t('chat.send'));
-    send.disabled = false;
-    if (!on) autoGrow();
+    if (on) {
+      // STOP affordance while streaming — always actionable.
+      send.disabled = false;
+    } else {
+      // Back to send: re-evaluate the gate (input + gateway live-tier).
+      autoGrow();
+    }
   }
 
   function newChat() {
@@ -1571,7 +1605,11 @@
   }
 
   function closeOverlay(overlay) {
-    if (overlay.getAttribute && overlay.getAttribute('data-settings') === '1') _settingsOpen = false;
+    if (overlay.getAttribute && overlay.getAttribute('data-settings') === '1') {
+      _settingsOpen = false;
+      // Mode/tier/sign-in may have changed in the sheet -> refresh the send gate.
+      syncSendEnabled();
+    }
     overlay.style.animation = 'fade .15s ease reverse forwards';
     setTimeout(function () { overlay.remove(); }, 140);
   }
@@ -1729,6 +1767,7 @@
           state.gwModel = m.id;
           renderGatewayTierList(mount);
           updateModelPill();
+          syncSendEnabled();
         });
       }
       // NON-ready rows: no click handler at all (early-return semantics) —
