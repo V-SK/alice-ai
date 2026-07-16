@@ -13,7 +13,7 @@ invariant).
 
 ## Download
 
-**Latest: [v0.1.0](https://github.com/V-SK/alice-ai/releases/latest)** · download page with full verification steps → **https://aliceprotocol.org/ai**
+**Latest: [v0.1.1](https://github.com/V-SK/alice-ai/releases/latest)** · download page with full verification steps → **https://aliceprotocol.org/ai**
 
 | Platform | File | Status |
 |---|---|---|
@@ -79,7 +79,7 @@ scripts/setup_dev_env.sh        # creates .venv, installs backend/requirements.t
 .venv/bin/python -c "import alice_acp.local_inference; print('local_inference OK')"
 ```
 
-> Status: **Released** — v0.1.0 ships for macOS (stable) and Windows/Linux
+> Status: **Released** — v0.1.1 ships for macOS (stable) and Windows/Linux
 > (beta). All milestones built (M0–M8: native shell, in-proc inference router,
 > Model Manager, brand reskin, per-OS packaging, earn-bridge, security
 > hardening); see [`docs/PLAN.md`](docs/PLAN.md) for the design.
